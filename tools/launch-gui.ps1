@@ -1,0 +1,128 @@
+param(
+  [string]$GameRoot,
+  [string]$NpmRegistry
+)
+
+$ErrorActionPreference = "Stop"
+
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+. (Join-Path $PSScriptRoot "modkit-config.ps1")
+$GameRoot = Resolve-Dq2GameRoot -ProjectRoot $ProjectRoot -GameRoot $GameRoot
+Set-Dq2RuntimeEnvironment -ProjectRoot $ProjectRoot -GameRoot $GameRoot
+$Gui = Join-Path $ProjectRoot "app\gui"
+$GameExe = Join-Path $Gui "Game.exe"
+$AppTs = Join-Path $Gui "app.ts"
+$AppJs = Join-Path $Gui "app.js"
+$AppSrc = Join-Path $Gui "src"
+$ExtractDataDir = Join-Path $ProjectRoot "output\extract\data"
+$DataPak = Join-Path $GameRoot "www\data.pak"
+$DataDir = Join-Path $GameRoot "www\data"
+
+function Test-GuiDataExtractReady {
+  if (-not (Test-Path -LiteralPath $ExtractDataDir)) { return $false }
+  $requiredFiles = @(
+    "System.json",
+    "Items.json",
+    "Weapons.json",
+    "Armors.json",
+    "Actors.json",
+    "Skills.json",
+    "MapInfos.json",
+    "Troops.json",
+    "Enemies.json",
+    "CommonEvents.json"
+  )
+  foreach ($fileName in $requiredFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $ExtractDataDir $fileName))) {
+      return $false
+    }
+  }
+  $indexPath = if (Test-Path -LiteralPath $DataPak) {
+    Join-Path $ExtractDataDir "_index.json"
+  } else {
+    Join-Path $ExtractDataDir "_extract-report.json"
+  }
+  if (-not (Test-Path -LiteralPath $indexPath)) { return $false }
+
+  if ((Test-Path -LiteralPath $DataPak) -and (Test-Path -LiteralPath $indexPath)) {
+    if ((Get-Item -LiteralPath $DataPak).LastWriteTimeUtc -gt (Get-Item -LiteralPath $indexPath).LastWriteTimeUtc) {
+      return $false
+    }
+  } elseif (Test-Path -LiteralPath $DataDir) {
+    $systemPath = Join-Path $DataDir "System.json"
+    if ((Test-Path -LiteralPath $systemPath) -and ((Get-Item -LiteralPath $systemPath).LastWriteTimeUtc -gt (Get-Item -LiteralPath $indexPath).LastWriteTimeUtc)) {
+      return $false
+    }
+  }
+  return $true
+}
+
+function Invoke-DataExtractIfNeeded {
+  if (Test-GuiDataExtractReady) { return }
+  if (Test-Path -LiteralPath $DataPak) {
+    Write-Host "Extracted data not found or stale. Extracting www/data.pak for GUI lists..."
+    & node (Join-Path $PSScriptRoot "extract-data-pak.mjs")
+    if ($LASTEXITCODE -ne 0) { throw "extract-data-pak.mjs failed with exit code $LASTEXITCODE" }
+  } else {
+    Write-Host "Extracted data not found or stale. Decrypting www/data/*.json for GUI lists..."
+    & node (Join-Path $PSScriptRoot "extract-data.mjs") --game-root $GameRoot
+    if ($LASTEXITCODE -ne 0) { throw "extract-data.mjs failed with exit code $LASTEXITCODE" }
+  }
+}
+
+function Invoke-GuiBuildIfNeeded {
+  $Sources = @()
+  if (Test-Path -LiteralPath $AppTs) {
+    $Sources += Get-Item -LiteralPath $AppTs
+  }
+  if (Test-Path -LiteralPath $AppSrc) {
+    $Sources += Get-ChildItem -LiteralPath $AppSrc -Filter "*.ts" -File -Recurse
+  }
+  if ($Sources.Count -eq 0) { return }
+
+  $needsBuild = -not (Test-Path -LiteralPath $AppJs)
+  if (-not $needsBuild) {
+    $latestSource = $Sources | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    $needsBuild = $latestSource.LastWriteTimeUtc -gt (Get-Item -LiteralPath $AppJs).LastWriteTimeUtc
+  }
+  if (-not $needsBuild) { return }
+
+  $Registry = $NpmRegistry
+  if (-not $Registry) { $Registry = $env:DQ2_NPM_REGISTRY }
+  if (-not $Registry) { $Registry = "https://registry.npmmirror.com" }
+  $npmCommand = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source
+  if (-not $npmCommand) {
+    $npmCommand = (Get-Command npm -ErrorAction Stop).Source
+  }
+
+  if (-not (Test-Path -LiteralPath (Join-Path $Gui "node_modules"))) {
+    Push-Location $Gui
+    try {
+      & $npmCommand install --registry $Registry
+      if ($LASTEXITCODE -ne 0) { throw "GUI npm install failed with exit code $LASTEXITCODE" }
+    } finally {
+      Pop-Location
+    }
+  }
+
+  Push-Location $Gui
+  try {
+    & $npmCommand run build
+    if ($LASTEXITCODE -ne 0) { throw "GUI TypeScript build failed with exit code $LASTEXITCODE" }
+  } finally {
+    Pop-Location
+  }
+}
+
+Invoke-DataExtractIfNeeded
+Invoke-GuiBuildIfNeeded
+
+if (-not (Test-Path -LiteralPath $GameExe)) {
+  & (Join-Path $PSScriptRoot "setup-runtime.ps1") -GameRoot $GameRoot -NpmRegistry $NpmRegistry
+}
+
+if (-not (Test-Path -LiteralPath $GameExe)) {
+  throw "Trainer GUI runtime not found after setup: $GameExe"
+}
+
+Start-Process -FilePath $GameExe -WorkingDirectory $Gui

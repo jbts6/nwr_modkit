@@ -1,0 +1,38 @@
+{
+  "name": "codex-trainer-gui",
+  "private": true,
+  "main": "index.html",
+  "nodejs": true,
+  "node-remote": "<all_urls>",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test:bridge-io": "node tests/bridge-io-contract.mjs",
+    "test:catalog": "node tests/catalog-contract.mjs",
+    "test:commands": "node tests/bridge-command-builders.mjs",
+    "test:diagnostics": "node tests/diagnostics-contract.mjs",
+    "test:guardrails": "node tests/guardrails-contract.mjs",
+    "test:inventory": "node tests/gui-feature-inventory.mjs",
+    "test:topology": "node tests/build-topology.mjs",
+    "test:protocol": "node tests/protocol-check.mjs && node tests/bridge-command-builders.mjs --quiet && node tests/runtime-safety-policy.mjs",
+    "test:prison": "node tests/prison-guard-contract.mjs",
+    "test:routes": "node tests/route-inventory.mjs",
+    "test:route-selector": "node tests/route-selector-contract.mjs",
+    "test:state": "node tests/runtime-state-contract.mjs",
+    "test:ui": "node tests/catalog-ui-contract.mjs && node tests/feature-audit-policy-contract.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "typescript": "^5.6.3"
+  },
+  "window": {
+    "title": "梦魇：无归 修改器",
+    "width": 1120,
+    "height": 760,
+    "min_width": 980,
+    "min_height": 660,
+    "position": "center",
+    "show": true,
+    "frame": true
+  },
+  "chromium-args": "--force-color-profile=srgb --allow-file-access-from-files"
+}

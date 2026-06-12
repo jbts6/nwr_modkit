@@ -1,0 +1,26 @@
+{
+  "expectedBridgeVersion": "0.2.32",
+  "supportedRoutes": [
+    "manual-bg-bridge"
+  ],
+  "routeDetails": {
+    "manual-bg-bridge": {
+      "label": "Prepare manual bridge game",
+      "default": true,
+      "powershellSwitches": [
+        "-BgBridgeManual"
+      ],
+      "launcher": "launch-bg-bridge-runtime.ps1",
+      "riskNote": "手动 bridge：准备 runtime/game-app/start-manual-bg-bridge.cmd，然后用“打开游戏”启动生成目录。准备阶段不修改根目录 package.json 或 www 文件，也不会启动根目录 Game.exe；普通根目录 Game.exe 已运行时无法后附加。"
+    }
+  },
+  "diagnosticCommandNames": [
+    "ping",
+    "runtime.inspect",
+    "runtime.search",
+    "data.dump",
+    "trainer.options.get",
+    "trainer.hooks.info",
+    "map.current"
+  ]
+}

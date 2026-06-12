@@ -1,0 +1,1528 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>梦魇：无归 Probe</title>
+<script>
+(async function () {
+  const fs = require("fs");
+  const path = require("path");
+  const harnessRoot = process.cwd();
+  const projectRoot = path.resolve(harnessRoot, "..", "..");
+  const gameRoot = resolveGameRoot(projectRoot);
+  process.env.DQ2_MODKIT_ROOT = projectRoot;
+  process.env.DQ2_GAME_ROOT = gameRoot;
+  const resultPath = path.join(harnessRoot, "probe-result.json");
+  const result = {
+    ok: false,
+    errors: [],
+    versions: {
+      nw: typeof nw !== "undefined" ? process.versions.nw : null,
+      chrome: process.versions.chrome,
+      node: process.versions.node
+    }
+  };
+  const nativeSetTimeout = setTimeout.bind(globalThis);
+  const nativeSetInterval = setInterval.bind(globalThis);
+  const nativeClearInterval = clearInterval.bind(globalThis);
+  const nativeProcessExit = process.exit.bind(process);
+  const nativeProcessKill = process.kill.bind(process);
+  const nativeProcessAbort = typeof process.abort === "function" ? process.abort.bind(process) : null;
+  const nativeNwQuit = nw.App.quit.bind(nw.App);
+  const nativeNwCrashBrowser = typeof nw.App.crashBrowser === "function" ? nw.App.crashBrowser.bind(nw.App) : null;
+  const nativeNwCrashRenderer = typeof nw.App.crashRenderer === "function" ? nw.App.crashRenderer.bind(nw.App) : null;
+  const nativeNwWindowOpen = nw.Window && typeof nw.Window.open === "function"
+    ? nw.Window.open.bind(nw.Window)
+    : null;
+  function flushResult() {
+    try {
+      fs.writeFileSync(resultPath, JSON.stringify(result, null, 2));
+    } catch (_) {}
+  }
+  const flushInterval = nativeSetInterval(flushResult, 500);
+  flushResult();
+
+  function resolveGameRoot(projectRoot) {
+    const candidates = [];
+    if (process.env.DQ2_GAME_ROOT) candidates.push(process.env.DQ2_GAME_ROOT);
+    try {
+      const configPath = path.join(projectRoot, "config.local.json");
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+        if (config && config.gameRoot) candidates.push(String(config.gameRoot));
+      }
+    } catch (error) {
+      throw new Error("Invalid config.local.json: " + (error && error.message || error));
+    }
+    candidates.push(path.resolve(projectRoot, ".."));
+
+    for (const candidate of candidates) {
+      const fullPath = path.resolve(projectRoot, expandEnv(candidate));
+      if (fs.existsSync(path.join(fullPath, "www", "index.html"))) {
+        return fs.realpathSync(fullPath);
+      }
+    }
+    throw new Error("Game root not found. Set DQ2_GAME_ROOT or create config.local.json.");
+  }
+
+  function expandEnv(value) {
+    return String(value).replace(/%([^%]+)%|\$\{([^}]+)\}/g, function (match, winName, posixName) {
+      const name = winName || posixName;
+      return process.env[name] || match;
+    });
+  }
+
+  const anyCache = new Map();
+  function makeAny(name) {
+    if (anyCache.has(name)) return anyCache.get(name);
+    function Any() {}
+    const obj = new Proxy(Any, {
+      get(target, prop) {
+        if (prop === Symbol.toPrimitive) return () => 0;
+        if (prop === "toString") return () => "";
+        if (prop === "valueOf") return () => 0;
+        if (prop === "prototype") return target.prototype;
+        if (!(prop in target)) target[prop] = makeAny(String(prop));
+        return target[prop];
+      },
+      set(target, prop, value) {
+        target[prop] = value;
+        return true;
+      },
+      apply() {
+        return makeAny(name + "()");
+      },
+      construct() {
+        return makeAny("new " + name);
+      }
+    });
+    Any.prototype = new Proxy({}, {
+      get(target, prop) {
+        if (!(prop in target)) target[prop] = makeAny(String(prop));
+        return target[prop];
+      },
+      set(target, prop, value) {
+        target[prop] = value;
+        return true;
+      }
+    });
+    anyCache.set(name, obj);
+    return obj;
+  }
+
+  try {
+    globalThis.window = globalThis;
+    const zlib = require("zlib");
+    globalThis["dhnqvρHRJZSDvyHC"] = makeAny("dhnqvρHRJZSDvyHC");
+    globalThis["zboymδhGS4qeh5Zr"] = makeAny("zboymδhGS4qeh5Zr");
+    globalThis["gahpfβkSpiOh4wOr"] = makeAny("gahpfβkSpiOh4wOr");
+    try {
+      const missingPath = path.join(harnessRoot, "missing-globals.json");
+      const parsedMissing = fs.existsSync(missingPath) ? JSON.parse(fs.readFileSync(missingPath, "utf8")) : [];
+      const missing = Array.isArray(parsedMissing) ? parsedMissing : [parsedMissing];
+      result.predefinedMissing = missing;
+      for (const name of missing) {
+        if (name === "PIXI") continue;
+        if (typeof name === "string" && !(name in globalThis)) globalThis[name] = makeAny(name);
+      }
+    } catch (error) {
+      result.errors.push("missing-globals: " + String(error && error.stack || error));
+    }
+    globalThis.Imported = {};
+    globalThis.$plugins = globalThis.$plugins || [];
+    globalThis.$dataSystem = { gameTitle: "梦魇：无归", versionId: 1 };
+    globalThis.$gameSystem = {};
+    globalThis.$gameTemp = {};
+    globalThis.$gameParty = {};
+    globalThis.$gamePlayer = {};
+    globalThis.CryptoJS = require("crypto-js");
+    globalThis.pako = require("pako");
+    globalThis.base64js = require("base64-js");
+    globalThis.msgpack = require("@msgpack/msgpack");
+    globalThis.LZString = require("lz-string");
+    globalThis.$ = globalThis.$ || makeAny("$");
+    globalThis.jQuery = globalThis.jQuery || globalThis.$;
+    if (typeof String.prototype.contains !== "function") {
+      String.prototype.contains = function (value) { return this.includes(value); };
+    }
+    if (typeof Array.prototype.contains !== "function") {
+      Array.prototype.contains = function (value) { return this.includes(value); };
+    }
+    if (typeof String.prototype.format !== "function") {
+      String.prototype.format = function () {
+        const args = arguments;
+        return this.replace(/%([0-9]+)/g, function (_, n) {
+          return args[Number(n) - 1];
+        });
+      };
+    }
+    if (typeof Number.prototype.clamp !== "function") {
+      Number.prototype.clamp = function (min, max) {
+        return Math.min(Math.max(this, min), max);
+      };
+    }
+    if (typeof Number.prototype.padZero !== "function") {
+      Number.prototype.padZero = function (length) {
+        return String(this).padStart(length, "0");
+      };
+    }
+    if (typeof String.prototype.padZero !== "function") {
+      String.prototype.padZero = function (length) {
+        return this.padStart(length, "0");
+      };
+    }
+    globalThis.PluginManager = globalThis.PluginManager || {};
+    if (typeof globalThis.PluginManager.parameters !== "function") {
+      globalThis.PluginManager.parameters = function () { return {}; };
+    }
+
+    function installProbeGuards() {
+      result.guards = [];
+      function guard(entry) {
+        result.guards.push(entry);
+        if (fs.existsSync(path.join(harnessRoot, "abort-on-guard.flag"))) {
+          throw new Error("__codex_guard_abort__:" + entry.fn);
+        }
+      }
+      process.exit = function (code) {
+        guard({ fn: "process.exit", code });
+      };
+      process.kill = function (pid, signal) {
+        guard({ fn: "process.kill", pid, signal });
+        return true;
+      };
+      if (typeof process.abort === "function") {
+        process.abort = function () {
+          guard({ fn: "process.abort" });
+        };
+      }
+      nw.App.quit = function () {
+        guard({ fn: "nw.App.quit" });
+      };
+      if (typeof nw.App.crashBrowser === "function") {
+        nw.App.crashBrowser = function () {
+          guard({ fn: "nw.App.crashBrowser" });
+        };
+      }
+      if (typeof nw.App.crashRenderer === "function") {
+        nw.App.crashRenderer = function () {
+          guard({ fn: "nw.App.crashRenderer" });
+        };
+      }
+      if (nw.Window && typeof nw.Window.open === "function") {
+        nw.Window.open = function (url, options, callback) {
+          guard({ fn: "nw.Window.open", url: String(url), options });
+          const fakeWindow = makeAny("nw.Window.open");
+          if (typeof callback === "function") {
+            nativeSetTimeout(() => callback(fakeWindow), 0);
+          }
+          return fakeWindow;
+        };
+      }
+      globalThis.close = function () {
+        guard({ fn: "window.close" });
+      };
+      globalThis.setInterval = function (fn, delay) {
+        result.guards.push({ fn: "setInterval", delay });
+        let ticks = 0;
+        const intervalDelay = Math.min(Math.max(Number(delay) || 0, 10), 200);
+        const id = nativeSetInterval(() => {
+          ticks += 1;
+          try {
+            if (typeof fn === "function") fn();
+          } catch (error) {
+            result.guards.push({ fn: "setInterval.callback", error: String(error && error.stack || error).split("\n")[0] });
+          }
+          if (ticks >= 12) nativeClearInterval(id);
+        }, intervalDelay);
+        return id;
+      };
+      globalThis.clearInterval = function (id) {
+        nativeClearInterval(id);
+      };
+      try {
+        if (globalThis.chrome && chrome.runtime && typeof chrome.runtime.reload === "function") {
+          chrome.runtime.reload = function () {
+            guard({ fn: "chrome.runtime.reload" });
+          };
+        }
+      } catch (_) {}
+      try {
+        if (globalThis.location && typeof location.reload === "function") {
+          location.reload = function () {
+            guard({ fn: "location.reload" });
+          };
+        }
+      } catch (_) {}
+      try {
+        if (globalThis.SceneManager && typeof SceneManager.stop === "function") {
+          SceneManager.stop = function () {
+            guard({ fn: "SceneManager.stop" });
+          };
+        }
+      } catch (_) {}
+    }
+
+    function restoreProbeGuards() {
+      process.exit = nativeProcessExit;
+      process.kill = nativeProcessKill;
+      if (nativeProcessAbort) process.abort = nativeProcessAbort;
+      nw.App.quit = nativeNwQuit;
+      if (nativeNwCrashBrowser) nw.App.crashBrowser = nativeNwCrashBrowser;
+      if (nativeNwCrashRenderer) nw.App.crashRenderer = nativeNwCrashRenderer;
+      if (nativeNwWindowOpen) nw.Window.open = nativeNwWindowOpen;
+      globalThis.setInterval = nativeSetInterval;
+      globalThis.clearInterval = nativeClearInterval;
+    }
+
+    function describeBufferLike(value, limit = 96) {
+      try {
+        if (typeof value === "string") {
+          return { type: "string", length: value.length, head: value.slice(0, limit) };
+        }
+        if (Buffer.isBuffer(value) || value instanceof Uint8Array || value && value.buffer && typeof value.byteLength === "number") {
+          const bytes = Buffer.from(value.buffer || value, value.byteOffset || 0, value.byteLength || value.length || 0);
+          return {
+            type: Object.prototype.toString.call(value),
+            length: bytes.length,
+            hexHead: bytes.subarray(0, limit).toString("hex"),
+            textHead: bytes.subarray(0, limit).toString("utf8").replace(/[^\x20-\x7e]/g, ".")
+          };
+        }
+        return { type: Object.prototype.toString.call(value), value: String(value).slice(0, limit) };
+      } catch (error) {
+        return { error: String(error && error.stack || error).split("\n")[0] };
+      }
+    }
+
+    function installNodeCryptoTrace() {
+      const nodeCrypto = require("crypto");
+      if (nodeCrypto.__codexTraceInstalled) return;
+      nodeCrypto.__codexTraceInstalled = true;
+      result.nodeCryptoTrace = result.nodeCryptoTrace || [];
+      const limit = 500;
+      function push(entry) {
+        if (result.nodeCryptoTrace.length < limit) result.nodeCryptoTrace.push(entry);
+      }
+      function traceHashLike(factoryName, originalFactory) {
+        return function () {
+          const hash = originalFactory.apply(this, arguments);
+          const entry = {
+            fn: factoryName,
+            args: Array.from(arguments).map(arg => describeBufferLike(arg, 64)),
+            calls: []
+          };
+          push(entry);
+          for (const method of ["update", "digest"]) {
+            if (typeof hash[method] !== "function") continue;
+            const original = hash[method].bind(hash);
+            hash[method] = function () {
+              try {
+                const ret = original.apply(hash, arguments);
+                if (entry.calls.length < 20) {
+                  entry.calls.push({
+                    method,
+                    args: Array.from(arguments).map(arg => describeBufferLike(arg, 64)),
+                    ret: method === "digest" ? describeBufferLike(ret, 96) : { type: typeof ret }
+                  });
+                }
+                return ret;
+              } catch (error) {
+                if (entry.calls.length < 20) {
+                  entry.calls.push({ method, error: String(error && error.stack || error).split("\n")[0] });
+                }
+                throw error;
+              }
+            };
+          }
+          return hash;
+        };
+      }
+      const originalCreateHash = nodeCrypto.createHash;
+      nodeCrypto.createHash = traceHashLike("createHash", originalCreateHash);
+      const originalCreateHmac = nodeCrypto.createHmac;
+      nodeCrypto.createHmac = traceHashLike("createHmac", originalCreateHmac);
+      const originalScryptSync = nodeCrypto.scryptSync;
+      nodeCrypto.scryptSync = function (password, salt, keylen, options) {
+        const ret = originalScryptSync.apply(this, arguments);
+        push({
+          fn: "scryptSync",
+          password: describeBufferLike(password),
+          salt: describeBufferLike(salt),
+          keylen,
+          options: options ? describeBufferLike(JSON.stringify(options)) : null,
+          ret: describeBufferLike(ret)
+        });
+        return ret;
+      };
+      const originalCreateDecipheriv = nodeCrypto.createDecipheriv;
+      nodeCrypto.createDecipheriv = function (algorithm, key, iv, options) {
+        const decipher = originalCreateDecipheriv.apply(this, arguments);
+        const entry = {
+          fn: "createDecipheriv",
+          algorithm,
+          key: describeBufferLike(key),
+          iv: describeBufferLike(iv),
+          options: options ? describeBufferLike(JSON.stringify(options)) : null,
+          calls: []
+        };
+        push(entry);
+        for (const method of ["update", "final"]) {
+          if (typeof decipher[method] !== "function") continue;
+          const original = decipher[method].bind(decipher);
+          decipher[method] = function () {
+            try {
+              const ret = original.apply(decipher, arguments);
+              if (entry.calls.length < 12) {
+                entry.calls.push({
+                  method,
+                  args: Array.from(arguments).map(arg => describeBufferLike(arg, 64)),
+                  ret: describeBufferLike(ret, 96)
+                });
+              }
+              return ret;
+            } catch (error) {
+              if (entry.calls.length < 12) {
+                entry.calls.push({ method, error: String(error && error.stack || error).split("\n")[0] });
+              }
+              throw error;
+            }
+          };
+        }
+        return decipher;
+      };
+    }
+
+    function installJsonTrace() {
+      if (JSON.__codexTraceInstalled) return;
+      JSON.__codexTraceInstalled = true;
+      result.jsonTrace = result.jsonTrace || [];
+      const originalParse = JSON.parse;
+      JSON.parse = function (text, reviver) {
+        const entry = { input: describeBufferLike(String(text), 160) };
+        try {
+          const parsed = originalParse.apply(this, arguments);
+          entry.ok = true;
+          entry.outputType = Object.prototype.toString.call(parsed);
+          entry.keys = parsed && typeof parsed === "object" ? Object.keys(parsed).slice(0, 24) : [];
+          return parsed;
+        } catch (error) {
+          entry.ok = false;
+          entry.error = String(error && error.stack || error).split("\n")[0];
+          throw error;
+        } finally {
+          if (result.jsonTrace.length < 120) result.jsonTrace.push(entry);
+        }
+      };
+    }
+
+    function installFsTrace() {
+      if (fs.__codexTraceInstalled) return;
+      fs.__codexTraceInstalled = true;
+      result.fsTrace = result.fsTrace || [];
+      function record(entry) {
+        if (result.fsTrace.length < 200) result.fsTrace.push(entry);
+      }
+      for (const method of ["readFileSync", "existsSync", "statSync", "readdirSync", "writeFileSync"]) {
+        if (typeof fs[method] !== "function") continue;
+        const original = fs[method].bind(fs);
+        fs[method] = function () {
+          const args = Array.from(arguments);
+          let first = args.length ? String(args[0]) : "";
+          if (/package\.json$/i.test(first) && path.resolve(first) === path.join(harnessRoot, "package.json")) {
+            args[0] = path.join(gameRoot, "package.json");
+            first = String(args[0]);
+          }
+          const interesting = /package\.json|manifest|\.dll|data[\\/]|plugins[\\/]|bg_script|loading|Game\.exe|node\.dll|nw\.dll/i.test(first);
+          try {
+            const ret = original.apply(fs, args);
+            if (interesting) {
+              record({
+                fn: method,
+                path: first,
+                ok: true,
+                ret: ret && ret.length !== undefined ? { length: ret.length } : describeBufferLike(ret, 80)
+              });
+            }
+            return ret;
+          } catch (error) {
+            if (interesting) {
+              record({
+                fn: method,
+                path: first,
+                ok: false,
+                error: String(error && error.stack || error).split("\n")[0]
+              });
+            }
+            throw error;
+          }
+        };
+      }
+    }
+
+    function forceDocumentComplete() {
+      try {
+        Object.defineProperty(document, "readyState", {
+          configurable: true,
+          get() { return "complete"; }
+        });
+        result.documentReadyForced = true;
+      } catch (error) {
+        result.documentReadyForceError = String(error && error.stack || error).split("\n")[0];
+      }
+    }
+
+    function spoofGameRuntimeSignals() {
+      result.runtimeSpoof = {
+        cwdBefore: process.cwd(),
+        execPathBefore: process.execPath,
+        nwFlavorBefore: process.versions && process.versions["nw-flavor"]
+      };
+      try {
+        process.cwd = function () { return gameRoot; };
+        result.runtimeSpoof.cwd = process.cwd();
+      } catch (error) {
+        result.runtimeSpoof.cwdError = String(error && error.stack || error).split("\n")[0];
+      }
+      try {
+        Object.defineProperty(process, "execPath", {
+          configurable: true,
+          get() { return path.join(gameRoot, "Game.exe"); }
+        });
+        result.runtimeSpoof.execPath = process.execPath;
+      } catch (error) {
+        result.runtimeSpoof.execPathError = String(error && error.stack || error).split("\n")[0];
+      }
+      try {
+        Object.defineProperty(process.versions, "nw-flavor", {
+          configurable: true,
+          value: "normal"
+        });
+        result.runtimeSpoof.nwFlavor = process.versions["nw-flavor"];
+      } catch (error) {
+        result.runtimeSpoof.nwFlavorError = String(error && error.stack || error).split("\n")[0];
+      }
+      try {
+        const nativeClient = {
+          name: "Native Client",
+          filename: "internal-nacl-plugin",
+          description: "Native Client"
+        };
+        nativeClient.toString = function () { return "[object Plugin]"; };
+        const namedItem = function (name) {
+          if (String(name) === "Native Client") return nativeClient;
+          return null;
+        };
+        namedItem.toString = function () { return "function namedItem() { [native code] }"; };
+        Object.defineProperty(navigator, "plugins", {
+          configurable: true,
+          value: { namedItem, length: 1, 0: nativeClient }
+        });
+        result.runtimeSpoof.nativeClient = !!navigator.plugins.namedItem("Native Client");
+      } catch (error) {
+        result.runtimeSpoof.nativeClientError = String(error && error.stack || error).split("\n")[0];
+      }
+    }
+
+    function installAssignmentProbes() {
+      result.assignmentProbe = result.assignmentProbe || [];
+      function probeAssignedLoadDataFile(fn) {
+        if (result.assignmentDataProbe && result.assignmentDataProbe.attempted) return;
+        result.assignmentDataProbe = { attempted: true };
+        const NativeXHR = globalThis.XMLHttpRequest;
+        const previousOnLoad = globalThis.DataManager && DataManager.onLoad;
+        const previousDataSystem = globalThis.$dataSystem;
+        class ImmediateFsDataXhr {
+          constructor() {
+            this.status = 0;
+            this.responseText = "";
+            this.response = null;
+          }
+          open(method, url) {
+            this.method = method;
+            this.url = String(url || "");
+          }
+          overrideMimeType() {}
+          send() {
+            try {
+              const normalized = this.url.replace(/\\/g, "/").replace(/^\/+/, "");
+              const dataRel = normalized.replace(/^.*?data\//i, "data/");
+              const source = path.join(gameRoot, "www", dataRel);
+              this.responseText = fs.readFileSync(source, "utf8");
+              this.response = this.responseText;
+              this.status = 200;
+              result.assignmentDataProbe.xhr = {
+                url: this.url,
+                source,
+                responseLength: this.responseText.length,
+                responseHead: this.responseText.slice(0, 80)
+              };
+              if (typeof this.onload === "function") this.onload();
+            } catch (error) {
+              this.status = 404;
+              result.assignmentDataProbe.xhrError = String(error && error.stack || error);
+              if (typeof this.onerror === "function") this.onerror(error);
+            }
+          }
+        }
+        try {
+          globalThis.XMLHttpRequest = ImmediateFsDataXhr;
+          DataManager.onLoad = function (object) {
+            result.assignmentDataProbe.onLoad = valueInfo(object, 512);
+            if (object && typeof object === "object") {
+              const dumpDir = path.join(projectRoot, "output", "extract", "data");
+              fs.mkdirSync(dumpDir, { recursive: true });
+              const outputPath = path.join(dumpDir, "System.assigned.json");
+              fs.writeFileSync(outputPath, JSON.stringify(object, null, 2), "utf8");
+              result.assignmentDataProbe.output = outputPath;
+            }
+          };
+          fn.call(DataManager, "$dataSystem", "System.json");
+          result.assignmentDataProbe.global = valueInfo(globalThis.$dataSystem, 512);
+        } catch (error) {
+          result.assignmentDataProbe.error = String(error && error.stack || error);
+        } finally {
+          globalThis.XMLHttpRequest = NativeXHR;
+          if (globalThis.DataManager) DataManager.onLoad = previousOnLoad;
+          if (!result.assignmentDataProbe.output) globalThis.$dataSystem = previousDataSystem;
+          flushResult();
+        }
+      }
+      try {
+        if (globalThis.DataManager && !DataManager.__codexAssignmentProbe) {
+          let loadDataFile = DataManager.loadDataFile;
+          Object.defineProperty(DataManager, "loadDataFile", {
+            configurable: true,
+            get() { return loadDataFile; },
+            set(value) {
+              result.assignmentProbe.push({
+                target: "DataManager.loadDataFile",
+                type: typeof value,
+                at: result.evalProgress.slice()
+              });
+              loadDataFile = value;
+              if (typeof value === "function") probeAssignedLoadDataFile(value);
+            }
+          });
+          DataManager.__codexAssignmentProbe = true;
+        }
+      } catch (error) {
+        result.assignmentProbe.push({ target: "DataManager.loadDataFile", error: String(error && error.stack || error) });
+      }
+    }
+
+    function installPluginParameterProxy() {
+      try {
+        const fallbackParams = makeAny("pluginParams");
+        const plugins = Array.isArray(globalThis.$plugins) ? globalThis.$plugins : [];
+        result.pluginParameterNames = plugins
+          .filter(plugin => plugin && plugin.status !== false)
+          .map(plugin => plugin && plugin.name)
+          .filter(Boolean)
+          .slice(0, 240);
+        globalThis.PluginManager = globalThis.PluginManager || {};
+        PluginManager.parameters = function (name) {
+          const key = String(name || "").toLowerCase();
+          const found = plugins.find(plugin =>
+            plugin &&
+            plugin.name &&
+            String(plugin.name).toLowerCase() === key
+          );
+          return found && found.parameters ? found.parameters : fallbackParams;
+        };
+        PluginManager._parameters = PluginManager._parameters || {};
+      } catch (error) {
+        result.pluginParameterProxyError = String(error && error.stack || error);
+      }
+    }
+
+    function installPluginLoadTrace() {
+      try {
+        if (!globalThis.PluginManager || PluginManager.__codexLoadTraceInstalled) return;
+        PluginManager.__codexLoadTraceInstalled = true;
+        result.pluginLoadTrace = result.pluginLoadTrace || [];
+        const originalLoadScript = PluginManager.loadScript;
+        if (typeof originalLoadScript === "function") {
+          PluginManager.loadScript = function (name) {
+            result.pluginLoadTrace.push({
+              fn: "loadScript",
+              name: String(name),
+              path: this && this._path,
+              scriptsBefore: this && Array.isArray(this._scripts) ? this._scripts.slice(-12) : []
+            });
+            return originalLoadScript.apply(this, arguments);
+          };
+        }
+        const originalOnError = PluginManager.onError;
+        if (typeof originalOnError === "function") {
+          PluginManager.onError = function (event) {
+            result.pluginLoadTrace.push({
+              fn: "onError",
+              url: event && (event._url || event.target && event.target._url || event.target && event.target.src)
+            });
+            return originalOnError.apply(this, arguments);
+          };
+        }
+      } catch (error) {
+        result.pluginLoadTraceError = String(error && error.stack || error).split("\n")[0];
+      }
+    }
+
+    async function runStandardPluginLoader() {
+      result.standardPluginLoader = {
+        attempted: true,
+        before: pluginManagerInfo()
+      };
+      result.phase = "standardPluginLoader:start";
+      flushResult();
+      try {
+        installPluginParameterProxy();
+        installAssignmentProbes();
+        installPluginLoadTrace();
+        if (!globalThis.PluginManager || typeof PluginManager.setup !== "function") {
+          result.standardPluginLoader.error = "PluginManager.setup unavailable";
+          flushResult();
+          return 1;
+        }
+        result.phase = "standardPluginLoader:setup";
+        flushResult();
+        PluginManager.setup(globalThis.$plugins || []);
+        result.phase = "standardPluginLoader:poll";
+        flushResult();
+        const start = Date.now();
+        while (Date.now() - start < 8000) {
+          await new Promise(resolve => nativeSetTimeout(resolve, 200));
+          const info = pluginManagerInfo();
+          result.standardPluginLoader.poll = info;
+          flushResult();
+        }
+        await new Promise(resolve => nativeSetTimeout(resolve, 2400));
+        result.standardPluginLoader.after = pluginManagerInfo();
+        result.phase = "standardPluginLoader:done";
+        flushResult();
+        return result.standardPluginLoader.after && result.standardPluginLoader.after.errorUrlsLength ? 1 : 0;
+      } catch (error) {
+        result.standardPluginLoader.error = String(error && error.stack || error);
+        result.errors.push("standardPluginLoader: " + result.standardPluginLoader.error);
+        flushResult();
+        return 1;
+      }
+    }
+
+    function pluginManagerInfo() {
+      if (!globalThis.PluginManager) return { type: typeof globalThis.PluginManager };
+      const scripts = Array.isArray(PluginManager._scripts) ? PluginManager._scripts : [];
+      const errors = Array.isArray(PluginManager._errorUrls) ? PluginManager._errorUrls : [];
+      return {
+        path: PluginManager._path,
+        scriptsLength: scripts.length,
+        scriptsTail: scripts.slice(-20),
+        errorUrlsLength: errors.length,
+        errorUrlsTail: errors.slice(-20),
+        parametersLength: PluginManager._parameters && typeof PluginManager._parameters === "object"
+          ? Object.keys(PluginManager._parameters).length
+          : 0
+      };
+    }
+
+    const useFullLoader = fs.existsSync(path.join(harnessRoot, "full-loader.flag"));
+    const useStandardPluginLoader = fs.existsSync(path.join(harnessRoot, "standard-loader.flag"));
+    result.useFullLoader = useFullLoader;
+    result.useStandardPluginLoader = useStandardPluginLoader;
+    const scriptFiles = useFullLoader ? [
+      "video-main.js.jsc"
+    ] : [
+      "pixi.js.jsc",
+      "pixi-tilemap.js.jsc",
+      "pixi-picture.js.jsc",
+      "fpsmeter.js.jsc",
+      "lz-string.js.jsc",
+      "iphone-inline-video.browser.js.jsc",
+      "load-resources.js.jsc",
+      "localforage.min.js.jsc",
+      "oneprice.js.jsc",
+      "rpg_core.js.jsc",
+      "rpg_managers.js.jsc",
+      "rpg_objects.js.jsc",
+      "rpg_scenes.js.jsc",
+      "rpg_sprites.js.jsc",
+      "rpg_windows.js.jsc",
+      "plugins.js.jsc"
+    ];
+    result.evalAttempts = [];
+    result.evalProgress = [];
+    result.evalOk = false;
+    try {
+      installProbeGuards();
+      installNodeCryptoTrace();
+      installJsonTrace();
+      let evalFailures = 0;
+      function evalBytecode(scriptPath, label) {
+        result.evalProgress.push(`${label}:start`);
+        flushResult();
+        nw.Window.get().evalNWBin(null, Buffer.from(fs.readFileSync(scriptPath)));
+        result.evalProgress.push(label);
+        flushResult();
+      }
+      for (const file of scriptFiles) {
+        const scriptPath = path.join(harnessRoot, file);
+        if (!fs.existsSync(scriptPath)) {
+          result.evalProgress.push(`${file}:missing`);
+          flushResult();
+          continue;
+        }
+        if (file === "AXY_AjaxNetStuff.js.jsc" || file === "Drill_EnemyTtleColors.js.jsc") {
+          installPluginParameterProxy();
+          installAssignmentProbes();
+        }
+        try {
+          evalBytecode(scriptPath, file);
+        } catch (error) {
+          evalFailures += 1;
+          const text = String(error && error.stack || error);
+          result.evalProgress.push(`${file}:error`);
+          result.evalAttempts.push({ file, ok: false, error: text.split("\n")[0] });
+          result.errors.push(text);
+          flushResult();
+        }
+      }
+      if (!useFullLoader) {
+        result.phase = "beforePluginLoad";
+        flushResult();
+        forceDocumentComplete();
+        spoofGameRuntimeSignals();
+        installFsTrace();
+        if (useStandardPluginLoader) {
+          evalFailures += await runStandardPluginLoader();
+        } else {
+          result.activePluginEval = [];
+          const activePlugins = (Array.isArray(globalThis.$plugins) ? globalThis.$plugins : [])
+            .filter(plugin => plugin && plugin.status !== false && plugin.name)
+            .map(plugin => String(plugin.name));
+          for (const name of activePlugins) {
+            const rel = path.join("www", "js", "plugins", name + ".js");
+            const scriptPath = path.join(gameRoot, rel);
+            const entry = { name, rel };
+            if (!fs.existsSync(scriptPath)) {
+              entry.ok = false;
+              entry.error = "missing";
+              result.activePluginEval.push(entry);
+              continue;
+            }
+            if (name === "Drill_EnemyTtleColors") {
+              installPluginParameterProxy();
+              installAssignmentProbes();
+            }
+            try {
+              evalBytecode(scriptPath, "plugins/" + name + ".js");
+              entry.ok = true;
+            } catch (error) {
+              evalFailures += 1;
+              entry.ok = false;
+              entry.error = String(error && error.stack || error).split("\n").slice(0, 8).join("\n");
+              result.errors.push("plugin " + name + ": " + entry.error);
+            }
+            result.activePluginEval.push(entry);
+          }
+          const mainPath = path.join(harnessRoot, "main.js.jsc");
+          if (fs.existsSync(mainPath)) {
+            try {
+              evalBytecode(mainPath, "main.js.jsc");
+            } catch (error) {
+              evalFailures += 1;
+              const text = String(error && error.stack || error);
+              result.evalAttempts.push({ file: "main.js.jsc", ok: false, error: text.split("\n")[0] });
+              result.errors.push(text);
+            }
+          }
+        }
+      }
+      result.phase = "evalBlockDone";
+      flushResult();
+      result.evalOk = evalFailures === 0;
+      result.evalAttempts.push({ attempt: 0, ok: evalFailures === 0, failures: evalFailures });
+      if (useFullLoader) {
+        await new Promise(resolve => nativeSetTimeout(resolve, 6000));
+      }
+    } catch (error) {
+      const text = String(error && error.stack || error);
+      result.evalAttempts.push({ attempt: 0, ok: false, error: text.split("\n")[0] });
+      const match = text.match(/ReferenceError:\s+(.+?)\s+is not defined/);
+      if (match) {
+        result.missingGlobal = match[1];
+      }
+      result.errors.push(text);
+    } finally {
+      restoreProbeGuards();
+    }
+
+    result.pluginProbe = {
+      globals: Object.getOwnPropertyNames(globalThis)
+        .filter(key => /decipher|password|private|crypto|plugin|ready|load|decrypt|penc|iv|check|chack|watch|mmt|grover|manifest|hack|debug|gameking|tiga|fire/i.test(key))
+        .sort()
+        .slice(0, 300)
+        .map(key => {
+          let value;
+          try { value = globalThis[key]; } catch (_) { value = undefined; }
+          return {
+            key,
+            type: typeof value,
+            keys: value && typeof value === "object" ? Object.getOwnPropertyNames(value).slice(0, 80) : []
+          };
+        }),
+      dataManagerKeys: globalThis.DataManager && typeof DataManager === "function"
+        ? Object.getOwnPropertyNames(DataManager).filter(key => /decipher|password|private|crypto|plugin|ready|load|decrypt|penc|iv/i.test(key)).sort()
+        : []
+    };
+    result.activePluginDetails = (Array.isArray(globalThis.$plugins) ? globalThis.$plugins : [])
+      .filter(plugin => plugin && /drill_enemyttlecolors|ajax|save/i.test(String(plugin.name || "")))
+      .map(plugin => ({
+        name: plugin.name,
+        status: plugin.status,
+        parameters: plugin.parameters || {}
+      }));
+    const securityGlobalNames = [
+      "Grover",
+      "WalkThruFire",
+      "Tiga",
+      "IGameKing",
+      "HackLoaded",
+      "DaXY",
+      "modulesMmt",
+      "win32Path",
+      "win64Path",
+      "Manifest",
+      "GameDll",
+      "AppManifest",
+      "ManifestInvalid",
+      "JSONParse",
+      "decipherData",
+      "getPassword",
+      "loadPluginsReadyHandler",
+      "Npenc",
+      "Npenc,"
+    ];
+    result.securityGlobals = {};
+    function shallowGlobalInfo(value) {
+      const info = { type: typeof value, tag: Object.prototype.toString.call(value) };
+      try {
+        if (value && (typeof value === "object" || typeof value === "function")) {
+          info.ownNames = Object.getOwnPropertyNames(value).slice(0, 120);
+          info.keys = Object.keys(value).slice(0, 120);
+          info.fnNames = info.ownNames.filter(name => {
+            try { return typeof value[name] === "function"; } catch (_) { return false; }
+          }).slice(0, 80);
+          info.childKeys = {};
+          for (const key of info.ownNames.slice(0, 40)) {
+            let child;
+            try { child = value[key]; } catch (_) { continue; }
+            if (child && (typeof child === "object" || typeof child === "function")) {
+              info.childKeys[key] = Object.getOwnPropertyNames(child).slice(0, 60);
+            }
+          }
+        } else if (typeof value === "string") {
+          info.length = value.length;
+          info.head = value.slice(0, 160);
+        }
+      } catch (error) {
+        info.error = String(error && error.stack || error).split("\n")[0];
+      }
+      return info;
+    }
+    for (const name of securityGlobalNames) {
+      try {
+        result.securityGlobals[name] = shallowGlobalInfo(globalThis[name]);
+      } catch (error) {
+        result.securityGlobals[name] = { error: String(error && error.stack || error).split("\n")[0] };
+      }
+    }
+    result.sceneFunctionStrings = {};
+    for (const [label, value] of [
+      ["Scene_Boot.initialize", globalThis.Scene_Boot && Scene_Boot.prototype && Scene_Boot.prototype.initialize],
+      ["Scene_Boot.create", globalThis.Scene_Boot && Scene_Boot.prototype && Scene_Boot.prototype.create],
+      ["DataManager.loadDataFile", globalThis.DataManager && DataManager.loadDataFile]
+    ]) {
+      try {
+        result.sceneFunctionStrings[label] = typeof value === "function" ? String(value).slice(0, 400) : typeof value;
+      } catch (error) {
+        result.sceneFunctionStrings[label] = String(error && error.stack || error).split("\n")[0];
+      }
+    }
+
+    result.bootProbe = { methods: [] };
+    try {
+      result.phase = "bootProbe:start";
+      flushResult();
+      installProbeGuards();
+      if (globalThis.Scene_Boot && Scene_Boot.prototype) {
+        const bootScene = Object.create(Scene_Boot.prototype);
+        if (typeof globalThis.onload === "function") {
+          const entry = { method: "window.onload" };
+          try {
+            globalThis.onload();
+            entry.ok = true;
+          } catch (error) {
+            entry.ok = false;
+            entry.error = String(error && error.stack || error).split("\n").slice(0, 12).join("\n");
+          }
+          result.bootProbe.methods.push(entry);
+          await new Promise(resolve => nativeSetTimeout(resolve, 800));
+        }
+        for (const method of ["initialize", "create", "isReady", "checkPlayerLocation", "start"]) {
+          const entry = { method };
+          try {
+            const fn = Scene_Boot.prototype[method];
+            entry.type = typeof fn;
+            if (typeof fn === "function") {
+              const ret = fn.call(bootScene);
+              entry.ok = true;
+              entry.returnValue = typeof ret === "object" ? valueInfo(ret, 160) : ret;
+              entry.bootKeys = Object.keys(bootScene).slice(0, 80);
+            }
+          } catch (error) {
+            entry.ok = false;
+            entry.error = String(error && error.stack || error).split("\n").slice(0, 12).join("\n");
+          }
+          result.bootProbe.methods.push(entry);
+          await new Promise(resolve => nativeSetTimeout(resolve, 300));
+        }
+      } else {
+        result.bootProbe.error = "Scene_Boot unavailable";
+      }
+      if (fs.existsSync(path.join(harnessRoot, "boot-database.flag")) &&
+          globalThis.DataManager && typeof DataManager.loadDatabase === "function") {
+        const entry = { method: "DataManager.loadDatabase" };
+        try {
+          DataManager.loadDatabase();
+          entry.ok = true;
+        } catch (error) {
+          entry.ok = false;
+          entry.error = String(error && error.stack || error).split("\n").slice(0, 12).join("\n");
+        }
+        result.bootProbe.methods.push(entry);
+        await new Promise(resolve => nativeSetTimeout(resolve, 800));
+      }
+    } catch (error) {
+      result.bootProbe.error = String(error && error.stack || error);
+    } finally {
+      restoreProbeGuards();
+    }
+    result.phase = "bootProbe:done";
+    flushResult();
+
+    result.phase = "dataProbe:start";
+    flushResult();
+    async function probeDataLoad() {
+      result.dataProbe = { attempted: false };
+      if (!globalThis.DataManager || typeof DataManager.loadDataFile !== "function") {
+        result.dataProbe.error = "DataManager.loadDataFile unavailable";
+        return;
+      }
+
+      const NativeXHR = globalThis.XMLHttpRequest;
+      const previousOnLoad = DataManager.onLoad;
+      const previousDataSystem = globalThis.$dataSystem;
+
+      class FsDataXhr {
+        constructor() {
+          this.status = 0;
+          this.responseText = "";
+          this.response = null;
+        }
+        open(method, url) {
+          this.method = method;
+          this.url = String(url || "");
+        }
+        overrideMimeType() {}
+        send() {
+          nativeSetTimeout(() => {
+            try {
+              const normalized = this.url.replace(/\\/g, "/").replace(/^\/+/, "");
+              const dataRel = normalized.replace(/^.*?data\//i, "data/");
+              const source = path.join(gameRoot, "www", dataRel);
+              this.responseText = fs.readFileSync(source, "utf8");
+              this.response = this.responseText;
+              this.status = 200;
+              result.dataProbe.xhr = {
+                url: this.url,
+                source,
+                responseLength: this.responseText.length,
+                responseHead: this.responseText.slice(0, 80)
+              };
+              if (typeof this.onload === "function") this.onload();
+            } catch (error) {
+              this.status = 404;
+              result.dataProbe.xhrError = String(error && error.stack || error);
+              if (typeof this.onerror === "function") this.onerror(error);
+            }
+          }, 0);
+        }
+      }
+
+      try {
+        result.dataProbe.attempted = true;
+        globalThis.XMLHttpRequest = FsDataXhr;
+        DataManager.onLoad = function (object) {
+          result.dataProbe.onLoad = valueInfo(object, 512);
+          if (object && typeof object === "object") {
+            const dumpDir = path.join(projectRoot, "output", "extract", "data");
+            fs.mkdirSync(dumpDir, { recursive: true });
+            const outputPath = path.join(dumpDir, "System.json");
+            fs.writeFileSync(outputPath, JSON.stringify(object, null, 2), "utf8");
+            result.dataProbe.output = outputPath;
+          }
+        };
+        DataManager.loadDataFile("$dataSystem", "System.json");
+        await new Promise(resolve => nativeSetTimeout(resolve, 800));
+        result.dataProbe.global = valueInfo(globalThis.$dataSystem, 512);
+      } catch (error) {
+        result.dataProbe.error = String(error && error.stack || error);
+      } finally {
+        globalThis.XMLHttpRequest = NativeXHR;
+        DataManager.onLoad = previousOnLoad;
+        if (!result.dataProbe.output) globalThis.$dataSystem = previousDataSystem;
+      }
+    }
+
+    await probeDataLoad();
+    result.phase = "dataProbe:done";
+    flushResult();
+
+    const Storage = globalThis.StorageManager || {};
+    const TkStorage = globalThis.TK && globalThis.TK.$ && globalThis.TK.$.StorageMrg || {};
+    const TkData = globalThis.TK && globalThis.TK.$ && globalThis.TK.$.DataMrg || {};
+    const storageCandidates = [
+      ["StorageManager", Storage],
+      ["TK.$.StorageMrg", TkStorage]
+    ];
+    result.storageType = typeof globalThis.StorageManager;
+    result.storagePropertyNames = Object.getOwnPropertyNames(Storage).sort();
+    result.tkStorageType = typeof TkStorage;
+    result.tkStoragePropertyNames = Object.getOwnPropertyNames(TkStorage || {}).sort();
+    result.tkStorageMethodSources = {};
+    for (const method of ["save", "saveToLocalFile", "load", "loadFromLocalFile", "localFilePath", "localFileDirectoryPath", "isLocalMode"]) {
+      try {
+        if (TkStorage && typeof TkStorage[method] === "function") {
+          result.tkStorageMethodSources[method] = String(TkStorage[method]).slice(0, 3000);
+        }
+      } catch (error) {
+        result.tkStorageMethodSources[method] = String(error && error.stack || error);
+      }
+    }
+    result.tkDataType = typeof TkData;
+    result.tkDataPropertyNames = Object.getOwnPropertyNames(TkData || {}).sort().slice(0, 200);
+    result.dataManagerType = typeof globalThis.DataManager;
+    result.dataManagerPropertyNames = Object.getOwnPropertyNames(globalThis.DataManager || {}).sort().slice(0, 200);
+    result.tkType = typeof globalThis.TK;
+    result.tkKeys = globalThis.TK && typeof globalThis.TK === "object" ? Object.getOwnPropertyNames(globalThis.TK).sort().slice(0, 200) : [];
+    result.tkDollarKeys = globalThis.TK && globalThis.TK.$ ? Object.getOwnPropertyNames(globalThis.TK.$).sort().slice(0, 200) : [];
+    result.tkDollarTypes = {};
+    if (globalThis.TK && globalThis.TK.$) {
+      for (const key of result.tkDollarKeys) result.tkDollarTypes[key] = typeof globalThis.TK.$[key];
+    }
+    result.storageKeys = Object.keys(Storage).sort();
+    result.storageTypes = {};
+    for (const key of result.storageKeys) result.storageTypes[key] = typeof Storage[key];
+    result.interestingGlobals = Object.keys(globalThis)
+      .filter(key => /save|storage|globalid|readfile|writefile|decode|encode|pack|unpack/i.test(key))
+      .sort()
+      .slice(0, 300)
+      .map(key => ({ key, type: typeof globalThis[key], ownKeys: globalThis[key] && typeof globalThis[key] === "object" ? Object.keys(globalThis[key]).slice(0, 40) : [] }));
+
+    function pickFn(name) {
+      if (typeof globalThis[name] === "function") return globalThis[name];
+      for (const [, candidate] of storageCandidates) {
+        if (candidate && typeof candidate[name] === "function") return candidate[name];
+      }
+      return null;
+    }
+
+    function asBytes(value) {
+      if (!value) return new Uint8Array();
+      if (value instanceof Uint8Array) return value;
+      if (Array.isArray(value)) return Uint8Array.from(value);
+      if (value.buffer && typeof value.byteLength === "number") {
+        return new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength);
+      }
+      return Uint8Array.from(value);
+    }
+
+    function bytesInfo(value, limit = 64) {
+      const bytes = asBytes(value);
+      return {
+        type: Object.prototype.toString.call(value),
+        length: bytes.length,
+        headHex: Array.from(bytes.slice(0, limit)).map(x => x.toString(16).padStart(2, "0")).join(""),
+        headAscii: Buffer.from(bytes.slice(0, limit)).toString("latin1").replace(/[^\x20-\x7e]/g, ".")
+      };
+    }
+
+    function wordArrayHex(value) {
+      if (!value) return String(value);
+      if (value.sigBytes != null && Array.isArray(value.words)) return value.toString(CryptoJS.enc.Hex);
+      if (value.toString) return value.toString(CryptoJS.enc.Hex);
+      return String(value);
+    }
+
+    function installCryptoTrace() {
+      if (result.cryptoTraceInstalled) return;
+      result.cryptoTraceInstalled = true;
+      result.cryptoTrace = [];
+      const limit = 200;
+      function describeCryptoValue(value) {
+        if (value == null) return { type: String(value) };
+        const type = Object.prototype.toString.call(value);
+        const item = { type };
+        try {
+          if (value.sigBytes != null && Array.isArray(value.words)) {
+            item.sigBytes = value.sigBytes;
+            item.hexHead = value.toString(CryptoJS.enc.Hex).slice(0, 160);
+            item.utf8Head = (() => {
+              try { return value.toString(CryptoJS.enc.Utf8).slice(0, 160); } catch (_) { return null; }
+            })();
+          } else if (typeof value === "string") {
+            item.length = value.length;
+            item.head = value.slice(0, 160);
+          } else if (value instanceof Uint8Array || value.buffer && typeof value.byteLength === "number") {
+            const bytes = asBytes(value);
+            item.length = bytes.length;
+            item.hexHead = Buffer.from(bytes.slice(0, 80)).toString("hex");
+          } else if (typeof value === "object") {
+            item.keys = Object.keys(value).slice(0, 20);
+          } else {
+            item.value = String(value);
+          }
+        } catch (error) {
+          item.error = String(error && error.stack || error).split("\n")[0];
+        }
+        return item;
+      }
+      function pushTrace(name, args, ret) {
+        if (result.cryptoTrace.length >= limit) return;
+        result.cryptoTrace.push({
+          name,
+          args: Array.from(args).map(describeCryptoValue),
+          ret: describeCryptoValue(ret)
+        });
+      }
+      const originalSha256 = CryptoJS.SHA256;
+      CryptoJS.SHA256 = function () {
+        const ret = originalSha256.apply(this, arguments);
+        pushTrace("SHA256", arguments, ret);
+        return ret;
+      };
+      const originalHmacSha256 = CryptoJS.HmacSHA256;
+      CryptoJS.HmacSHA256 = function () {
+        const ret = originalHmacSha256.apply(this, arguments);
+        pushTrace("HmacSHA256", arguments, ret);
+        return ret;
+      };
+      const originalDecrypt = CryptoJS.AES.decrypt;
+      CryptoJS.AES.decrypt = function () {
+        const ret = originalDecrypt.apply(this, arguments);
+        pushTrace("AES.decrypt", arguments, ret);
+        return ret;
+      };
+      const originalEncrypt = CryptoJS.AES.encrypt;
+      CryptoJS.AES.encrypt = function () {
+        const ret = originalEncrypt.apply(this, arguments);
+        pushTrace("AES.encrypt", arguments, ret);
+        return ret;
+      };
+    }
+
+    const getSaveKeyCandidates = pickFn("_getSaveKeyCandidates");
+    const deriveSaveKeys = pickFn("_deriveSaveKeys");
+    const deriveSaveKeysLegacy = pickFn("_deriveSaveKeysLegacy");
+    const decodeSaveBytes = pickFn("_decodeSaveBytes");
+    const unpackSaveV2 = pickFn("_unpackSaveV2");
+    result.saveApi = {
+      getSaveKeyCandidates: !!getSaveKeyCandidates,
+      deriveSaveKeys: !!deriveSaveKeys,
+      deriveSaveKeysLegacy: !!deriveSaveKeysLegacy,
+      decodeSaveBytes: !!decodeSaveBytes,
+      unpackSaveV2: !!unpackSaveV2
+    };
+
+    async function settle(value) {
+      if (value && typeof value.then === "function") return await value;
+      return value;
+    }
+
+    function valueInfo(value, limit = 256) {
+      const type = Object.prototype.toString.call(value);
+      if (typeof value === "string") {
+        return {
+          type,
+          length: value.length,
+          head: value.slice(0, limit),
+          jsonType: (() => {
+            try {
+              const parsed = JSON.parse(value);
+              return Object.prototype.toString.call(parsed);
+            } catch (_) {
+              return null;
+            }
+          })()
+        };
+      }
+      if (value instanceof Uint8Array || Array.isArray(value) || value && value.buffer && typeof value.byteLength === "number") {
+        return bytesInfo(value, limit);
+      }
+      return {
+        type,
+        value: value && typeof value === "object" ? Object.keys(value).slice(0, 80) : value
+      };
+    }
+
+    async function repackSavesIfRequested() {
+      const requestPath = path.join(harnessRoot, "save-repack-request.json");
+      if (!fs.existsSync(requestPath)) return false;
+      const request = JSON.parse(fs.readFileSync(requestPath, "utf8"));
+      const inputDir = path.resolve(request.inputDir);
+      const outputDir = path.resolve(request.outputDir);
+      fs.mkdirSync(outputDir, { recursive: true });
+
+      result.repack = {
+        inputDir,
+        outputDir,
+        entries: []
+      };
+
+      function readJson(name) {
+        return JSON.parse(fs.readFileSync(path.join(inputDir, name), "utf8"));
+      }
+
+      function stableJson(value) {
+        return JSON.stringify(value, (key, val) => typeof val === "bigint" ? val.toString() : val);
+      }
+
+      if (request.includeConfig !== false && fs.existsSync(path.join(inputDir, "config.json"))) {
+        const entry = { name: "config.rpgsave", source: path.join(inputDir, "config.json") };
+        try {
+          const json = readJson("config.json");
+          const packed = Buffer.from(msgpack.encode(json));
+          const encoded = zlib.deflateSync(packed).toString("base64");
+          const outputPath = path.join(outputDir, "config.rpgsave");
+          fs.writeFileSync(outputPath, encoded, "utf8");
+          const roundTrip = msgpack.decode(zlib.inflateSync(Buffer.from(encoded, "base64")));
+          entry.output = outputPath;
+          entry.packedLength = packed.length;
+          entry.encodedLength = encoded.length;
+          entry.verified = stableJson(roundTrip) === stableJson(json);
+        } catch (error) {
+          entry.error = String(error && error.stack || error);
+        }
+        result.repack.entries.push(entry);
+      }
+
+      if (!TkStorage || typeof TkStorage.save !== "function") {
+        throw new Error("TK.$.StorageMrg.save is unavailable");
+      }
+
+      const ids = Array.isArray(request.ids) ? request.ids : [0, 1, 3];
+      const previousDirectoryPath = TkStorage.localFileDirectoryPath;
+      const previousLocalFilePath = TkStorage.localFilePath;
+      const previousIsLocalMode = TkStorage.isLocalMode;
+      const previousStorageDirectoryPath = Storage.localFileDirectoryPath;
+      const previousStorageLocalFilePath = Storage.localFilePath;
+      const previousStorageIsLocalMode = Storage.isLocalMode;
+      const repackDirectoryPath = function () { return outputDir + path.sep; };
+      const repackLocalFilePath = function (savefileId) {
+        const fileName = Number(savefileId) === 0 ? "global.rpgsave" : `file${savefileId}.rpgsave`;
+        return path.join(outputDir, fileName);
+      };
+      const repackIsLocalMode = function () { return true; };
+      TkStorage.localFileDirectoryPath = repackDirectoryPath;
+      TkStorage.localFilePath = repackLocalFilePath;
+      TkStorage.isLocalMode = repackIsLocalMode;
+      Storage.localFileDirectoryPath = repackDirectoryPath;
+      Storage.localFilePath = repackLocalFilePath;
+      Storage.isLocalMode = repackIsLocalMode;
+      try {
+        for (const id of ids) {
+          const baseName = id === 0 ? "global" : `file${id}`;
+          const sourcePath = path.join(inputDir, `${baseName}.json`);
+          if (!fs.existsSync(sourcePath)) continue;
+          const entry = { id, name: `${baseName}.rpgsave`, source: sourcePath };
+          try {
+            const json = readJson(`${baseName}.json`);
+            const packed = msgpack.encode(json);
+            if (typeof TkStorage.saveToLocalFile === "function") {
+              await settle(TkStorage.saveToLocalFile.call(TkStorage, id, packed));
+            } else {
+              await settle(TkStorage.save.call(TkStorage, id, packed));
+            }
+            const outputPath = TkStorage.localFilePath.call(TkStorage, id);
+            const loaded = await settle(TkStorage.load.call(TkStorage, id));
+            const roundTrip = msgpack.decode(asBytes(loaded));
+            entry.output = outputPath;
+            entry.packedLength = packed.length;
+            entry.outputLength = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : null;
+            entry.verified = stableJson(roundTrip) === stableJson(json);
+          } catch (error) {
+            entry.error = String(error && error.stack || error);
+          }
+          result.repack.entries.push(entry);
+        }
+      } finally {
+        TkStorage.localFileDirectoryPath = previousDirectoryPath;
+        TkStorage.localFilePath = previousLocalFilePath;
+        TkStorage.isLocalMode = previousIsLocalMode;
+        Storage.localFileDirectoryPath = previousStorageDirectoryPath;
+        Storage.localFilePath = previousStorageLocalFilePath;
+        Storage.isLocalMode = previousStorageIsLocalMode;
+      }
+
+      return true;
+    }
+
+    const didRepack = await repackSavesIfRequested();
+    if (didRepack) {
+      result.ok = true;
+      return;
+    }
+
+    if (TkStorage && typeof TkStorage === "function") {
+      result.tkStorageCalls = [];
+      try {
+        const saveDir = path.join(gameRoot, "www", "save") + path.sep;
+        TkStorage.localFileDirectoryPath = function () { return saveDir; };
+        installCryptoTrace();
+        for (const id of [0, 1, 3, "global", "config"]) {
+          const callResult = { id };
+          for (const method of ["localFilePath", "loadFromLocalFile", "load"]) {
+            if (typeof TkStorage[method] !== "function") continue;
+            try {
+              const value = await settle(TkStorage[method].call(TkStorage, id));
+              callResult[method] = valueInfo(value);
+              if (method === "load" && (id === 0 || id === 1 || id === 3)) {
+                const bytes = asBytes(value);
+                if (bytes.length > 0) {
+                  const dumpDir = path.join(projectRoot, "output", "extract", "save");
+                  fs.mkdirSync(dumpDir, { recursive: true });
+                  const baseName = id === 0 ? "global" : `file${id}`;
+                  const msgpackPath = path.join(dumpDir, `${baseName}.msgpack`);
+                  fs.writeFileSync(msgpackPath, Buffer.from(bytes));
+                  callResult[method].dumpMsgpack = msgpackPath;
+                  try {
+                    const decoded = msgpack.decode(bytes);
+                    const jsonPath = path.join(dumpDir, `${baseName}.json`);
+                    fs.writeFileSync(jsonPath, JSON.stringify(decoded, (key, val) => typeof val === "bigint" ? val.toString() : val, 2), "utf8");
+                    callResult[method].dumpJson = jsonPath;
+                    callResult[method].decodedType = Object.prototype.toString.call(decoded);
+                    callResult[method].decodedKeys = decoded && typeof decoded === "object" ? Object.keys(decoded).slice(0, 80) : [];
+                  } catch (error) {
+                    callResult[method].decodeError = String(error && error.stack || error).split("\n")[0];
+                  }
+                }
+              }
+            } catch (error) {
+              callResult[method + "Error"] = String(error && error.stack || error).split("\n")[0];
+            }
+          }
+          result.tkStorageCalls.push(callResult);
+        }
+      } catch (error) {
+        result.errors.push("tkStorageCalls: " + String(error && error.stack || error));
+      }
+    }
+
+    if (getSaveKeyCandidates) {
+      result.candidateAttempts = [];
+      for (const [label, thisArg] of [["globalThis", globalThis], ...storageCandidates, ["null", null]]) {
+        try {
+          const candidates = getSaveKeyCandidates.call(thisArg);
+          result.candidateAttempts.push({
+            thisArg: label,
+            ok: true,
+            type: Object.prototype.toString.call(candidates),
+            value: candidates
+          });
+          if (!result.candidates && Array.isArray(candidates)) result.candidates = candidates;
+        } catch (error) {
+          result.candidateAttempts.push({
+            thisArg: label,
+            ok: false,
+            error: String(error && error.stack || error).split("\n")[0]
+          });
+        }
+      }
+    }
+
+    const fallbackInputs = [
+      "dq2|sv2|DaQiann",
+      "dq2|sv2|DaQiann|tk_expand",
+      "dq2|sv2|RPGMV",
+      "dq2|sv2|大千世界2",
+      "UIOj3hESQ5WqqS77",
+      "大千世界2"
+    ];
+    const inputs = Array.from(new Set([...(result.candidates || []), ...fallbackInputs].map(String)));
+    result.derived = [];
+    for (const input of inputs) {
+      for (const [name, fn] of [["_deriveSaveKeys", deriveSaveKeys], ["_deriveSaveKeysLegacy", deriveSaveKeysLegacy]]) {
+        if (!fn) continue;
+        for (const [label, thisArg] of [["globalThis", globalThis], ...storageCandidates]) {
+          try {
+            const keys = fn.call(thisArg, input);
+            result.derived.push({
+              fn: name,
+              thisArg: label,
+              input,
+              ok: true,
+              keysType: Object.prototype.toString.call(keys),
+              ownKeys: keys && typeof keys === "object" ? Object.keys(keys) : [],
+              encKey: wordArrayHex(keys && keys.encKey),
+              macKey: wordArrayHex(keys && keys.macKey),
+              raw: keys && typeof keys !== "object" ? String(keys) : undefined
+            });
+          } catch (error) {
+            result.derived.push({
+              fn: name,
+              thisArg: label,
+              input,
+              ok: false,
+              error: String(error && error.stack || error).split("\n")[0]
+            });
+          }
+        }
+      }
+    }
+
+    result.saveFiles = {};
+    for (const saveName of ["config.rpgsave", "global.rpgsave", "file1.rpgsave", "file3.rpgsave"]) {
+      const savePath = path.join(gameRoot, "www", "save", saveName);
+      if (!fs.existsSync(savePath)) continue;
+      const text = fs.readFileSync(savePath, "utf8");
+      const saveResult = { textLength: text.length };
+      try {
+        if (decodeSaveBytes) {
+          const decoded = decodeSaveBytes.call(globalThis, text);
+          saveResult.decoded = bytesInfo(decoded);
+          if (unpackSaveV2) {
+            for (const [label, thisArg] of [["globalThis", globalThis], ...storageCandidates]) {
+              try {
+                const unpacked = unpackSaveV2.call(thisArg, decoded);
+                saveResult["unpacked_" + label] = bytesInfo(unpacked, 128);
+              } catch (error) {
+                saveResult["unpackError_" + label] =
+                  String(error && error.stack || error).split("\n")[0];
+              }
+            }
+          }
+        }
+      } catch (error) {
+        saveResult.decodeError = String(error && error.stack || error).split("\n")[0];
+      }
+      result.saveFiles[saveName] = saveResult;
+    }
+
+    result.ok = true;
+  } catch (error) {
+    result.errors.push(String(error && error.stack || error));
+  } finally {
+    nativeClearInterval(flushInterval);
+    fs.writeFileSync(resultPath, JSON.stringify(result, null, 2));
+    setTimeout(() => nw.App.quit(), 100);
+  }
+}());
+</script>

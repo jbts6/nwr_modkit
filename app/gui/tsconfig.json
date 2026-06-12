@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "none",
+    "lib": ["ES2020", "DOM"],
+    "types": ["node"],
+    "strict": false,
+    "noImplicitAny": false,
+    "noEmitOnError": true,
+    "outFile": "app.js",
+    "skipLibCheck": true
+  },
+  "files": [
+    "src/bridge-io.ts",
+    "src/bridge-commands.ts",
+    "src/diagnostics.ts",
+    "src/feature-audit-policy.ts",
+    "src/command-guardrails.ts",
+    "src/tool-navigation.ts",
+    "src/prison-guard-view.ts",
+    "src/runtime-state.ts",
+    "src/runtime-events.ts",
+    "src/runtime-routes.ts",
+    "src/catalog-core.ts",
+    "src/catalog-ui.ts",
+    "src/catalog-tools.ts",
+    "src/catalog-loader.ts",
+    "app.ts"
+  ]
+}
