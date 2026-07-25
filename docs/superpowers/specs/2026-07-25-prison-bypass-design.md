@@ -1,8 +1,40 @@
 # 运行时屏蔽小黑屋（Prison Bypass）设计
 
 日期：2026-07-25  
-状态：已批准，待实现计划  
-范围：`nwr_modkit` 运行时 bridge + GUI；不改游戏 data、不改存档编辑器导出策略
+状态：已批准（含硬约束修订），待实现计划  
+范围：仅 `nwr_modkit` 内 authored 源码与文档；运行时 bridge + GUI  
+依据：`nwr_modkit/AGENTS.md`、`runtime/AGENTS.md`、`tools/AGENTS.md`、`docs/技术实现文档.md` 设计边界
+
+## 硬约束（必须遵守）
+
+实现与验收时把下列约束当作失败条件，而不是建议：
+
+1. **遵循 `nwr_modkit/AGENTS.md` 及其子树 AGENTS**
+   - 只改 authored 源：`runtime/bridge/`、`app/gui/`、`docs/`、相关合同测试等
+   - 不把 `output/`、`dist/`、`node_modules/`、NW 运行时 DLL/EXE/PAK、probe 日志当源码改
+   - 不把 `runtime/save-harness`、生成的 `runtime/game-app` 载荷当维护源
+   - 不静默覆盖 live `www/save`；需要写回的由用户手动备份替换
+   - 工具仍从游戏根启动：`powershell -NoProfile -ExecutionPolicy Bypass -File .\nwr_modkit\tools\...`
+
+2. **不得修改游戏本体文件**
+   - 原因：改动游戏根目录文件会触发完整性/启动检测，导致**无法打开游戏**
+   - 明确禁止写入或就地改写游戏根下任意文件，包括但不限于：
+     - `package.json`、`loading`、`www/index.html`、`www/loading.html`
+     - `www/js/**`、`www/data/**`、`www/img/**`、`www/audio/**`
+     - 其它 `Game.exe` 旁的原版资源与配置
+   - 本功能**禁止**采用：回写加密 data、清空/改写 CommonEvents、给 `www/js` 塞补丁、改启动 `package.json` / `index.html` 注入脚本
+
+3. **允许的工作面（与现有 modkit 一致）**
+   - 只修改 `nwr_modkit` 仓库内源码
+   - 运行时通过 **独立 bridge 目录**（如 `runtime/game-app`）注入 `page-bridge.js`；`www` 可为 junction/symlink 指向游戏目录
+   - **即使存在 junction，本功能也不得经该路径改写** `www/js`、`www/data`、`www/index.html` 等本体文件；只做进程内 hook
+   - 状态写在 `runtime/bridge-state/`（生成目录，非游戏安装文件）
+   - 现有 `tools/runtime-integrity-check.mjs` 保护的原版哈希文件必须继续保持不被改动
+
+4. **实现检查清单**
+   - 任何 PR/提交 diff 不得包含游戏根路径下的文件
+   - 不得新增“自动把补丁复制进 `www/`”的脚本步骤
+   - 文档与成功标准必须写明：屏蔽依赖 **modkit 启动的 bridge 运行时**，原版直接双击 `Game.exe` 不会带 bypass
 
 ## 背景
 
@@ -39,11 +71,13 @@
 
 ## 非目标
 
-- 不永久修改 `CommonEvents.json` / 地图事件 / 加密 data
+- **不修改任何游戏本体文件**（见硬约束；含 data / js / html / package.json）
+- 不永久修改 `CommonEvents.json` / 地图事件 / 加密 data（即使写在 `output/extract` 也不回灌 `www/data`）
 - 不放开存档编辑器硬风险导出拦截
 - 不保证屏蔽「终身监禁」等提示对话框（判定事件仍可能跑完文本）
 - 不拦截剧情副作用开关 `166 / 781 / 784 / 785 / 1067`（避免误伤正常流程）
 - 不保证覆盖尚未发现的、走完全不同结果路径的隐藏判定
+- 不改变原版无 bridge 启动路径的行为
 
 ## 方案选择
 
@@ -143,6 +177,8 @@ lastSafeMap: { mapId: number, x: number, y: number } | null
 
 ## 实现落点
 
+仅允许改动 `nwr_modkit/` 内下列 authored 文件（或同职责新增测试辅助，仍不得触碰游戏根）：
+
 | 文件 | 改动 |
 | --- | --- |
 | `runtime/bridge/page-bridge.js` | 选项、钩子、脱困、stats、`lastSafeMap`、state |
@@ -151,7 +187,9 @@ lastSafeMap: { mapId: number, x: number, y: number } | null
 | `app/gui/index.html` | 开关与展示位 |
 | `app/gui/src/prison-guard-view.ts` / `app.ts` | 渲染与发送命令 |
 | `app/gui/tests/prison-guard-contract.mjs` | 合同断言扩展 |
-| `docs/工具使用说明.md` / `docs/技术实现文档.md` / `README.md` | 使用与技术说明 |
+| `docs/工具使用说明.md` / `docs/技术实现文档.md` / `README.md` | 使用与技术说明；重申不改游戏文件 |
+
+**禁止落点：** 游戏根任意路径、`www/**` 实体文件、`runtime/game-app` 内对 junction 目标的写入、自动 repack 回 `www/data`。
 
 ## 测试计划
 
@@ -178,11 +216,12 @@ lastSafeMap: { mapId: number, x: number, y: number } | null
 - 开启时若已中招，可自动脱困到非 695 地图
 - 现有 prison 检测与 repair 仍可用
 - 合同测试通过；文档说明了能力与已知限制
+- **实现 diff 与运行流程均不修改游戏本体文件**；原版启动仍可打开游戏
+- 仍符合 `AGENTS.md`：不改游戏根 `package.json` / `www/index.html`，不静默覆盖 `www/save`
 
 ## 后续可选（不在本设计范围）
 
-- 存档编辑器放开硬风险导出
-- 永久 data 补丁（清空/改写判定 CE）
-- 连「终身监禁」提示一并屏蔽
-- 拦截更多尚未发现的判定入口
-```
+- 存档编辑器放开硬风险导出（仍不得自动写 `www/save`）
+- ~~永久 data 补丁~~：**默认否决**——会改游戏文件并触发启动检测；除非用户明确接受风险并改为纯手动、可回滚流程
+- 连「终身监禁」提示一并屏蔽（仍限内存 hook）
+- 拦截更多尚未发现的判定入口（仍限 bridge 内存层）
