@@ -306,6 +306,7 @@ var NwrGuiCommandGuardrails;
         action("battleKillBtn", "Kill battle enemies", "battle.killEnemies", "disable-guard", ["trainer.hooks.info", "runtime.inspect"], BATTLE_EVENTS),
         action("battleEscapeBtn", "Battle escape", "battle.escape", "disable-guard", ["trainer.hooks.info", "runtime.inspect"], BATTLE_EVENTS),
         action("partyRecoverBtn", "Recover party", "party.recover", "keep", ["ping"], PING_EVENTS),
+        action("prisonBypassBtn", "Toggle prison bypass", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
         action("prisonRepairBtn", "Repair prison guard risks", "prison.repair", "disable-guard", ["protocol handler inventory", "ping"], PING_EVENTS),
         action("mapTransferBtn", "Transfer map", "map.transfer", "disable-guard", ["map.current", "ping"], MAP_EVENTS),
         action("returnPositionBtn", "Return recorded position", "map.transfer", "disable-guard", ["map.current", "ping"], MAP_EVENTS),
@@ -408,49 +409,89 @@ var NwrGuiPrisonGuards;
         return parseReport(record(state)?.prisonGuardReport);
     }
     NwrGuiPrisonGuards.reportFromState = reportFromState;
-    function applyPanel(elements, report, live) {
-        const level = summaryLevel(report, live);
+    function bypassFromState(state) {
+        const row = record(state);
+        if (!row)
+            return null;
+        const options = record(row.trainerOptions) || {};
+        const stats = record(row.prisonBypassStats);
+        return {
+            active: options.prisonBypass === true,
+            stats: stats ? {
+                blockedSwitch520: Number(stats.blockedSwitch520 || 0),
+                blockedDisableSave: Number(stats.blockedDisableSave || 0),
+                blockedTransfer695: Number(stats.blockedTransfer695 || 0),
+                rescueCount: Number(stats.rescueCount || 0)
+            } : null
+        };
+    }
+    NwrGuiPrisonGuards.bypassFromState = bypassFromState;
+    function applyPanel(elements, report, live, bypass) {
+        const level = summaryLevel(report, live, bypass);
         elements.summary.className = `prison-summary prison-${level}`;
-        elements.summary.textContent = summaryText(report, live);
-        elements.metrics.innerHTML = metricsHtml(report, live);
+        elements.summary.textContent = summaryText(report, live, bypass);
+        elements.metrics.innerHTML = metricsHtml(report, live, bypass);
         elements.list.innerHTML = listHtml(report, live);
         const canRepair = live && !!report && report.hits.some((check) => check.fixable);
         elements.repairButton.disabled = !canRepair;
         elements.repairButton.title = canRepair
             ? "修复数值、关键物品和 Switch520；不会处理运行时 param(9) 提示"
             : "没有可自动修复的硬风险";
+        elements.bypassButton.disabled = !live;
+        elements.bypassButton.classList.toggle("active", !!bypass?.active);
+        elements.bypassButton.title = bypass?.active
+            ? "已开启：拦截 Switch520 / 禁存档 / Map695 传送，并自动脱困"
+            : "开启后拦截 Switch520 / 禁存档 / Map695 传送，并自动脱困";
     }
     NwrGuiPrisonGuards.applyPanel = applyPanel;
-    function summaryLevel(report, live) {
+    function summaryLevel(report, live, bypass) {
         if (!live || !report)
             return "idle";
+        if (bypass?.active) {
+            if (report.hits.length > 0)
+                return "warning";
+            return "ok";
+        }
         if (report.hits.length > 0)
             return "danger";
         if (report.warnings.length > 0)
             return "warning";
         return "ok";
     }
-    function summaryText(report, live) {
+    function summaryText(report, live, bypass) {
         if (!report)
             return "等待运行时检测";
         if (!live)
             return "状态过期，等待刷新";
+        if (bypass && bypass.active) {
+            if (report.hits.length > 0) {
+                return `已屏蔽惩处（仍检测到 ${report.hits.length} 项硬风险）`;
+            }
+            return "已屏蔽：520 / 禁存档 / Map695 传送将被拦截";
+        }
         if (report.hits.length > 0)
             return `${report.hits.length} 项硬风险`;
         if (report.warnings.length > 0)
             return `${report.warnings.length} 项提示`;
         return "检查通过";
     }
-    function metricsHtml(report, live) {
+    function metricsHtml(report, live, bypass) {
         const hits = report ? report.hits.length : 0;
         const warnings = report ? report.warnings.length : 0;
         const switchText = report?.punishmentSwitch ? "ON" : "OFF";
         const mapText = report?.mapId == null ? "-" : `${report.mapId} (${report.playerX ?? "-"}, ${report.playerY ?? "-"})`;
+        const blocked = bypass && bypass.stats
+            ? (Number(bypass.stats.blockedSwitch520 || 0) +
+                Number(bypass.stats.blockedDisableSave || 0) +
+                Number(bypass.stats.blockedTransfer695 || 0))
+            : 0;
         return [
             metric("硬风险", hits),
             metric("提示", warnings),
             metric("Switch520", live && report ? switchText : "-"),
-            metric("位置", live && report ? mapText : "-")
+            metric("位置", live && report ? mapText : "-"),
+            metric("屏蔽", live && bypass ? (bypass.active ? "ON" : "OFF") : "-"),
+            metric("拦截", live && bypass ? blocked : "-")
         ].join("");
     }
     function listHtml(report, live) {
@@ -1283,6 +1324,7 @@ var NwrGuiCatalog;
         prisonGuardSummary: $("prisonGuardSummary"),
         prisonGuardMetrics: $("prisonGuardMetrics"),
         prisonGuardList: $("prisonGuardList"),
+        prisonBypassBtn: $("prisonBypassBtn"),
         prisonRepairBtn: $("prisonRepairBtn"),
         variableList: $("variableList"),
         variableListCount: $("variableListCount"),
@@ -2465,8 +2507,9 @@ var NwrGuiCatalog;
             summary: dom.prisonGuardSummary,
             metrics: dom.prisonGuardMetrics,
             list: dom.prisonGuardList,
-            repairButton: dom.prisonRepairBtn
-        }, NwrGuiPrisonGuards.reportFromState(state), view.fresh && view.versionOk && view.hasParty);
+            repairButton: dom.prisonRepairBtn,
+            bypassButton: dom.prisonBypassBtn
+        }, NwrGuiPrisonGuards.reportFromState(state), view.fresh && view.versionOk && view.hasParty, NwrGuiPrisonGuards.bypassFromState(state));
         refreshPreparedGameControls();
         if (!view.hasState) {
             dom.battleState.textContent = "";
@@ -2685,6 +2728,10 @@ var NwrGuiCatalog;
         $("battleKillBtn").addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.battleKillEnemies(), "battleKillBtn"));
         $("battleEscapeBtn").addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.battleEscape(), "battleEscapeBtn"));
         $("partyRecoverBtn").addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.partyRecover(), "partyRecoverBtn"));
+        dom.prisonBypassBtn.addEventListener("click", () => {
+            const active = dom.prisonBypassBtn.classList.contains("active");
+            sendOptions({ prisonBypass: !active }, "prisonBypassBtn");
+        });
         dom.prisonRepairBtn.addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.prisonRepair(), "prisonRepairBtn"));
         $("mapTransferBtn").addEventListener("click", () => transferMap(numberValue("mapId", 0)));
         $("recordPositionBtn").addEventListener("click", recordCurrentPosition);

@@ -82,6 +82,7 @@ type SendCommandOptions = { readonly silent?: boolean };
     prisonGuardSummary: $("prisonGuardSummary"),
     prisonGuardMetrics: $("prisonGuardMetrics"),
     prisonGuardList: $("prisonGuardList"),
+    prisonBypassBtn: $("prisonBypassBtn"),
     prisonRepairBtn: $("prisonRepairBtn"),
     variableList: $("variableList"),
     variableListCount: $("variableListCount"),
@@ -1295,8 +1296,9 @@ type SendCommandOptions = { readonly silent?: boolean };
       summary: dom.prisonGuardSummary,
       metrics: dom.prisonGuardMetrics,
       list: dom.prisonGuardList,
-      repairButton: dom.prisonRepairBtn
-    }, NwrGuiPrisonGuards.reportFromState(state), view.fresh && view.versionOk && view.hasParty);
+      repairButton: dom.prisonRepairBtn,
+      bypassButton: dom.prisonBypassBtn
+    }, NwrGuiPrisonGuards.reportFromState(state), view.fresh && view.versionOk && view.hasParty, NwrGuiPrisonGuards.bypassFromState(state));
     refreshPreparedGameControls();
     if (!view.hasState) {
       dom.battleState.textContent = "";
@@ -1543,6 +1545,10 @@ type SendCommandOptions = { readonly silent?: boolean };
     $("battleKillBtn").addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.battleKillEnemies(), "battleKillBtn"));
     $("battleEscapeBtn").addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.battleEscape(), "battleEscapeBtn"));
     $("partyRecoverBtn").addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.partyRecover(), "partyRecoverBtn"));
+    dom.prisonBypassBtn.addEventListener("click", () => {
+      const active = dom.prisonBypassBtn.classList.contains("active");
+      sendOptions({ prisonBypass: !active }, "prisonBypassBtn");
+    });
     dom.prisonRepairBtn.addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.prisonRepair(), "prisonRepairBtn"));
     $("mapTransferBtn").addEventListener("click", () => transferMap(numberValue("mapId", 0)));
     $("recordPositionBtn").addEventListener("click", recordCurrentPosition);

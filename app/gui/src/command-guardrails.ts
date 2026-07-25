@@ -44,6 +44,7 @@ namespace NwrGuiCommandGuardrails {
     action("battleKillBtn", "Kill battle enemies", "battle.killEnemies", "disable-guard", ["trainer.hooks.info", "runtime.inspect"], BATTLE_EVENTS),
     action("battleEscapeBtn", "Battle escape", "battle.escape", "disable-guard", ["trainer.hooks.info", "runtime.inspect"], BATTLE_EVENTS),
     action("partyRecoverBtn", "Recover party", "party.recover", "keep", ["ping"], PING_EVENTS),
+    action("prisonBypassBtn", "Toggle prison bypass", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
     action("prisonRepairBtn", "Repair prison guard risks", "prison.repair", "disable-guard", ["protocol handler inventory", "ping"], PING_EVENTS),
     action("mapTransferBtn", "Transfer map", "map.transfer", "disable-guard", ["map.current", "ping"], MAP_EVENTS),
     action("returnPositionBtn", "Return recorded position", "map.transfer", "disable-guard", ["map.current", "ping"], MAP_EVENTS),
