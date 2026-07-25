@@ -1296,7 +1296,7 @@ var NwrGuiCatalog;
     const iconDir = path.join(process.cwd(), "icons");
     const exportedIconSetPath = path.join(iconDir, "IconSet.png");
     const fallbackIconSetPath = path.join(rootDir, "www", "img", "system", "IconSet.png");
-    const EXPECTED_BRIDGE_VERSION = "0.2.32";
+    const EXPECTED_BRIDGE_VERSION = "0.2.33";
     const ICON_EXPORT_RETRY_MS = 5000;
     const $ = (id) => {
         const element = document.getElementById(id);

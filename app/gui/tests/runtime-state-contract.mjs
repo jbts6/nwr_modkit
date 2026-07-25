@@ -75,11 +75,11 @@ function loadNamespace(appDir) {
 function statusCases(now) {
   return [
     { name: "disconnected", input: null, text: "未连接", kind: "idle", className: "status status-idle", bridge: "等待 bridge" },
-    { name: "stale", input: { ts: now - 9000, bridgeVersion: "0.2.32", hasParty: true }, text: "离线", kind: "idle", className: "status status-idle", bridge: "上次状态" },
-    { name: "version", input: { ts: now, bridgeVersion: "0.2.30", hasParty: true }, text: "需重启", kind: "error", className: "status status-error", bridge: "已注入 v0.2.30 -> v0.2.32" },
-    { name: "lastError", input: { ts: now, bridgeVersion: "0.2.32", hasParty: true, lastError: "boom" }, text: "有错误", kind: "error", className: "status status-error", bridge: "已注入 v0.2.32" },
-    { name: "loading", input: { ts: now, bridgeVersion: "0.2.32", hasParty: false, storagePatched: true }, text: "加载中", kind: "idle", className: "status status-idle", bridge: "已接入 v0.2.32" },
-    { name: "connected", input: { ts: now, bridgeVersion: "0.2.32", hasParty: true, gold: 123, saveDirExists: true, currentMap: { mapId: 7, x: 3, y: 4 } }, text: "已连接", kind: "online", className: "status status-online", bridge: "已注入 v0.2.32" }
+    { name: "stale", input: { ts: now - 9000, bridgeVersion: "0.2.33", hasParty: true }, text: "离线", kind: "idle", className: "status status-idle", bridge: "上次状态" },
+    { name: "version", input: { ts: now, bridgeVersion: "0.2.30", hasParty: true }, text: "需重启", kind: "error", className: "status status-error", bridge: "已注入 v0.2.30 -> v0.2.33" },
+    { name: "lastError", input: { ts: now, bridgeVersion: "0.2.33", hasParty: true, lastError: "boom" }, text: "有错误", kind: "error", className: "status status-error", bridge: "已注入 v0.2.33" },
+    { name: "loading", input: { ts: now, bridgeVersion: "0.2.33", hasParty: false, storagePatched: true }, text: "加载中", kind: "idle", className: "status status-idle", bridge: "已接入 v0.2.33" },
+    { name: "connected", input: { ts: now, bridgeVersion: "0.2.33", hasParty: true, gold: 123, saveDirExists: true, currentMap: { mapId: 7, x: 3, y: 4 } }, text: "已连接", kind: "online", className: "status status-online", bridge: "已注入 v0.2.33" }
   ];
 }
 
@@ -87,7 +87,7 @@ function assertStatusModels(runtimeState, options) {
   const now = 10_000;
   const cases = statusCases(now);
   for (const item of cases) {
-    const view = runtimeState.stateView(item.input, { expectedBridgeVersion: "0.2.32", now });
+    const view = runtimeState.stateView(item.input, { expectedBridgeVersion: "0.2.33", now });
     assert(view.status.text === item.text, `${item.name} status text expected ${item.text}, got ${view.status.text}`);
     assert(view.status.kind === item.kind, `${item.name} status kind expected ${item.kind}, got ${view.status.kind}`);
     assert(view.status.className === item.className, `${item.name} class expected ${item.className}, got ${view.status.className}`);
@@ -97,10 +97,10 @@ function assertStatusModels(runtimeState, options) {
     const [caseName, expected] = options.extraStatus.split(":");
     const found = cases.find((item) => item.name === caseName);
     if (!found) throw new RuntimeStateContractError(`unknown status case ${caseName}`);
-    const view = runtimeState.stateView(found.input, { expectedBridgeVersion: "0.2.32", now });
+    const view = runtimeState.stateView(found.input, { expectedBridgeVersion: "0.2.33", now });
     assert(view.status.text === expected, `${caseName} status text expected ${expected}, got ${view.status.text}`);
   }
-  const connected = runtimeState.stateView(cases.find((item) => item.name === "connected").input, { expectedBridgeVersion: "0.2.32", now });
+  const connected = runtimeState.stateView(cases.find((item) => item.name === "connected").input, { expectedBridgeVersion: "0.2.33", now });
   assert(connected.partyState === "可用", "connected party state should be available");
   assert(connected.saveState === "已识别", "connected save state should be recognized");
   assert(connected.mapState === "7 (3, 4)", "connected map state should include coordinates");
@@ -130,12 +130,12 @@ function assertRemovedStateSurface(appDir, runtimeState) {
   ];
   const view = runtimeState.stateView({
     ts: 10_000,
-    bridgeVersion: "0.2.32",
+    bridgeVersion: "0.2.33",
     hasParty: true,
     [removedDomain]: { variables: { count: 99 } },
     [`${removedDomain}Options`]: { autoSuccess: true },
     [`${removedDomain}Stats`]: { last: { name: "legacy" } }
-  }, { expectedBridgeVersion: "0.2.32", now: 10_000 });
+  }, { expectedBridgeVersion: "0.2.33", now: 10_000 });
   const rendered = JSON.stringify(view);
   for (const term of removedTerms) {
     assert(!rendered.includes(term), `runtime state view must not render removed term ${term}`);
@@ -159,7 +159,7 @@ function run() {
   assertRemovedStateSurface(appDir, namespaces.state);
   console.log("Runtime state contract");
   for (const item of statusCases(10_000)) {
-    const view = namespaces.state.stateView(item.input, { expectedBridgeVersion: "0.2.32", now: 10_000 });
+    const view = namespaces.state.stateView(item.input, { expectedBridgeVersion: "0.2.33", now: 10_000 });
     console.log(`${item.name}: ${view.status.className} / ${view.status.text} / ${view.bridgeText}`);
   }
   console.log("events: empty and newest-first escaped rendering ok");
