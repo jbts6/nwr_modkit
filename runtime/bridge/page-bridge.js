@@ -2,7 +2,7 @@
   if (window.__codexLocalTrainerBridge) return;
 
   const bridge = {
-    version: "0.2.32",
+    version: "0.2.33",
     startedAt: new Date().toISOString(),
     startedAtMs: Date.now(),
     processed: Object.create(null),
@@ -13,7 +13,8 @@
       dropRate: 1,
       noSkillCost: false,
       oneHitKill: false,
-      invincible: false
+      invincible: false,
+      prisonBypass: false
     },
     rateDepth: 0,
     suppressRates: 0,
@@ -23,6 +24,14 @@
     noCostBaselines: Object.create(null),
     rateStats: Object.create(null),
     battleStats: Object.create(null),
+    prisonBypassStats: {
+      blockedSwitch520: 0,
+      blockedDisableSave: 0,
+      blockedTransfer695: 0,
+      rescueCount: 0
+    },
+    lastSafeMap: null,
+    prisonBypassHooksPatched: false,
     hookTargets: [],
     hooksPatched: false,
     schedulers: [],
@@ -1096,17 +1105,25 @@
   function setTrainerOptions(options) {
     if (!options || typeof options !== "object") return { ...bridge.options };
     const previousNoCost = bridge.options.noSkillCost;
+    const previousBypass = bridge.options.prisonBypass;
     if (Object.prototype.hasOwnProperty.call(options, "expRate")) bridge.options.expRate = clampNumber(options.expRate, 0, 999, bridge.options.expRate);
     if (Object.prototype.hasOwnProperty.call(options, "goldRate")) bridge.options.goldRate = clampNumber(options.goldRate, 0, 999, bridge.options.goldRate);
     if (Object.prototype.hasOwnProperty.call(options, "dropRate")) bridge.options.dropRate = clampNumber(options.dropRate, 0, 999, bridge.options.dropRate);
     if (Object.prototype.hasOwnProperty.call(options, "noSkillCost")) bridge.options.noSkillCost = toBool(options.noSkillCost);
     if (Object.prototype.hasOwnProperty.call(options, "oneHitKill")) bridge.options.oneHitKill = toBool(options.oneHitKill);
     if (Object.prototype.hasOwnProperty.call(options, "invincible")) bridge.options.invincible = toBool(options.invincible);
+    if (Object.prototype.hasOwnProperty.call(options, "prisonBypass")) {
+      bridge.options.prisonBypass = toBool(options.prisonBypass);
+    }
     if (previousNoCost !== bridge.options.noSkillCost) {
       resetNoCostBaselines();
       if (bridge.options.noSkillCost) preserveNoCostResources("enabled");
     }
     ensureTrainerHooks();
+    if (bridge.options.prisonBypass) {
+      updateLastSafeMap();
+      if (!previousBypass) applyPrisonBypassNow();
+    }
     return { ...bridge.options };
   }
 
@@ -1603,6 +1620,54 @@
       }
     });
 
+    // Prison bypass: Switch 520
+    resolvePrototypeTargets("Game_Switches", ["Game_Switches"]).forEach((target) => {
+      if (patchMethod(target.object, "setValue", `${target.label}.setValue`, function (original, args) {
+        const id = Math.floor(Number(args[0]));
+        const value = args[1];
+        if (bridge.options.prisonBypass && id === PRISON_SWITCH_ID && value) {
+          bumpPrisonBypassStat("blockedSwitch520");
+          return original.call(this, id, false);
+        }
+        return original.apply(this, args);
+      })) {
+        count += 1;
+        hooked.push(`${target.label}.setValue`);
+        bridge.prisonBypassHooksPatched = true;
+      }
+    });
+
+    // Prison bypass: disableSave
+    resolvePrototypeTargets("Game_System", ["Game_System"]).forEach((target) => {
+      if (patchMethod(target.object, "disableSave", `${target.label}.disableSave`, function (original, args) {
+        if (bridge.options.prisonBypass) {
+          bumpPrisonBypassStat("blockedDisableSave");
+          return undefined;
+        }
+        return original.apply(this, args);
+      })) {
+        count += 1;
+        hooked.push(`${target.label}.disableSave`);
+        bridge.prisonBypassHooksPatched = true;
+      }
+    });
+
+    // Prison bypass: reserveTransfer Map695
+    resolvePrototypeTargets("Game_Player", ["Game_Player"]).forEach((target) => {
+      if (patchMethod(target.object, "reserveTransfer", `${target.label}.reserveTransfer`, function (original, args) {
+        const mapId = Math.floor(Number(args[0]));
+        if (bridge.options.prisonBypass && mapId === PRISON_MAP_ID) {
+          bumpPrisonBypassStat("blockedTransfer695");
+          return undefined;
+        }
+        return original.apply(this, args);
+      })) {
+        count += 1;
+        hooked.push(`${target.label}.reserveTransfer`);
+        bridge.prisonBypassHooksPatched = true;
+      }
+    });
+
     bridge.hooksPatched = count > 0;
     bridge.hookTargets = Array.from(new Set(hooked));
     return { patched: bridge.hooksPatched, count };
@@ -1617,7 +1682,8 @@
       Number(options.dropRate || 1) !== 1 ||
       !!options.noSkillCost ||
       !!options.oneHitKill ||
-      !!options.invincible
+      !!options.invincible ||
+      !!options.prisonBypass
     );
   }
 
@@ -1830,6 +1896,95 @@
     return false;
   }
 
+  const PRISON_SWITCH_ID = 520;
+  const PRISON_MAP_ID = 695;
+
+  function bumpPrisonBypassStat(name) {
+    if (!bridge.prisonBypassStats) {
+      bridge.prisonBypassStats = {
+        blockedSwitch520: 0,
+        blockedDisableSave: 0,
+        blockedTransfer695: 0,
+        rescueCount: 0
+      };
+    }
+    bridge.prisonBypassStats[name] = Number(bridge.prisonBypassStats[name] || 0) + 1;
+  }
+
+  function updateLastSafeMap() {
+    try {
+      const map = resolveMap();
+      const player = resolvePlayer();
+      const mapId = map && typeof map.mapId === "function" ? Number(map.mapId()) : null;
+      if (!Number.isFinite(mapId) || mapId === PRISON_MAP_ID) return;
+      if (!player) return;
+      const x = Number(player.x != null ? player.x : player._x);
+      const y = Number(player.y != null ? player.y : player._y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      bridge.lastSafeMap = { mapId, x: Math.floor(x), y: Math.floor(y) };
+    } catch (_) {}
+  }
+
+  function resolveSaveSystem() {
+    try {
+      if (window.$gameSystem) return window.$gameSystem;
+      if (window.TK && window.TK.$ && typeof window.TK.$.gameSystem === "function") {
+        return window.TK.$.gameSystem();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function forceEnableSave() {
+    const system = resolveSaveSystem();
+    if (!system) return false;
+    if (typeof system.enableSave === "function") {
+      system.enableSave();
+      return true;
+    }
+    if (Object.prototype.hasOwnProperty.call(system, "_saveEnabled")) {
+      system._saveEnabled = true;
+      return true;
+    }
+    return false;
+  }
+
+  function transferPlayerTo(mapId, x, y) {
+    const player = resolvePlayer();
+    if (!player || typeof player.reserveTransfer !== "function") return false;
+    const direction = typeof player.direction === "function" ? player.direction() : (player._direction || 2);
+    player.reserveTransfer(Math.floor(mapId), Math.floor(x), Math.floor(y), direction, 0);
+    return true;
+  }
+
+  function applyPrisonBypassNow() {
+    if (!bridge.options.prisonBypass) return { rescued: false, reason: "inactive" };
+    let rescued = false;
+    try {
+      const switches = resolveSwitches();
+      if (switches && typeof switches.value === "function" && switches.value(PRISON_SWITCH_ID)) {
+        // 直接写存储，避免依赖 hook 顺序；false 不被拦截
+        if (typeof switches.setValue === "function") switches.setValue(PRISON_SWITCH_ID, false);
+        rescued = true;
+      }
+      if (forceEnableSave()) rescued = true;
+
+      const map = resolveMap();
+      const mapId = map && typeof map.mapId === "function" ? Number(map.mapId()) : null;
+      if (mapId === PRISON_MAP_ID) {
+        const safe = bridge.lastSafeMap;
+        const target = safe && safe.mapId !== PRISON_MAP_ID
+          ? safe
+          : { mapId: 1, x: 0, y: 0 };
+        if (transferPlayerTo(target.mapId, target.x, target.y)) rescued = true;
+      }
+    } catch (error) {
+      bridge.lastError = String(error && error.stack || error);
+    }
+    if (rescued) bumpPrisonBypassStat("rescueCount");
+    return { rescued, lastSafeMap: bridge.lastSafeMap, stats: { ...bridge.prisonBypassStats } };
+  }
+
   function repairPrisonGuardRisks() {
     const before = collectPrisonGuardReport();
     const fixed = [];
@@ -1852,9 +2007,9 @@
       if (prisonSetBagCount("item", "_items", guard.itemId, 1)) pushFixed(guard.id);
     });
 
-    if (switchValue(520) === true) {
+    if (switchValue(PRISON_SWITCH_ID) === true) {
       try {
-        setSwitchValue(520, false);
+        setSwitchValue(PRISON_SWITCH_ID, false);
         pushFixed("switch-520");
       } catch (error) {
         bridge.lastError = String(error && error.stack || error);
@@ -1909,6 +2064,14 @@
     const switches = resolveSwitches();
     const dataManager = resolveDataManager();
     ensureTrainerHooks();
+    updateLastSafeMap();
+    if (bridge.options.prisonBypass) {
+      // 轻量：若已在 695 或 520 仍开，尝试脱困（覆盖读档）
+      const map = resolveMap();
+      const mapId = map && typeof map.mapId === "function" ? Number(map.mapId()) : null;
+      const punished = switchValue(PRISON_SWITCH_ID) === true;
+      if (mapId === PRISON_MAP_ID || punished) applyPrisonBypassNow();
+    }
     if (bridge.options.noSkillCost) preserveNoCostResources("state");
     const mapInfo = currentMapInfo();
     return {
@@ -1941,6 +2104,8 @@
       partyMembers: getPartyMembers(party).map(actorInfo).filter(Boolean),
       prisonGuardReport: collectPrisonGuardReport(),
       trainerOptions: { ...bridge.options },
+      prisonBypassStats: { ...bridge.prisonBypassStats },
+      lastSafeMap: bridge.lastSafeMap,
       rateStats: { ...bridge.rateStats },
       battleStats: { ...bridge.battleStats },
       hookTargets: bridge.hookTargets.slice(),
