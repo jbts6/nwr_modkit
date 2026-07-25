@@ -39,7 +39,14 @@ function assertBridgeRuntimeGuard(bridgeSource) {
     "actor-2-param-9",
     "CE342/343",
     "梦魇传送处提示",
-    "Switch785"
+    "Switch785",
+    "prisonBypass",
+    "applyPrisonBypassNow",
+    "blockedSwitch520",
+    "blockedDisableSave",
+    "blockedTransfer695",
+    "lastSafeMap",
+    "prisonBypassStats"
   ]) {
     assert(bridgeSource.includes(marker), `manual bridge must expose prison guard marker ${marker}`);
   }
@@ -59,12 +66,16 @@ function assertGuiSurface(indexHtml, appSource, commandSource, tsconfig) {
     "Map695",
     "Switch520",
     "actor(2).param(9)",
-    "id=\"prisonRepairBtn\""
+    "id=\"prisonRepairBtn\"",
+    "id=\"prisonBypassBtn\"",
+    "屏蔽小黑屋"
   ]) {
     assert(indexHtml.includes(marker), `GUI must expose prison guard surface marker ${marker}`);
   }
   assert(appSource.includes("NwrGuiPrisonGuards.applyPanel"), "app.ts must render live prison guard reports");
   assert(appSource.includes("NwrGuiBridgeCommands.prisonRepair"), "app.ts must send prison.repair from the repair button");
+  assert(appSource.includes("prisonBypass"), "app.ts must toggle prisonBypass via trainer options");
+  assert(appSource.includes("prisonBypassBtn"), "app.ts must bind prisonBypassBtn");
   assert(commandSource.includes("\"prison.repair\""), "bridge command builder must include prison.repair");
   assert(commandSource.includes("prisonRepair"), "bridge command builder must expose prisonRepair()");
   assert(tsconfig.files.includes("src/prison-guard-view.ts"), "tsconfig must compile prison guard view before app.ts");
@@ -79,6 +90,43 @@ function fakeRuntime(projectRoot, gameRoot) {
   const dataArmors = [];
   for (const id of [45, 49, 59, 73, 101, 653, 654, 656, 730, 819, 860]) dataItems[id] = item(id);
   dataArmors[400] = item(400, "armor");
+
+  function Game_Switches() {}
+  Game_Switches.prototype.setValue = function (id, value) {
+    this._data[id] = value === true;
+  };
+  Game_Switches.prototype.value = function (id) {
+    return this._data[id] === true;
+  };
+
+  function Game_System() {
+    this._saveEnabled = true;
+  }
+  Game_System.prototype.disableSave = function () {
+    this._saveEnabled = false;
+  };
+  Game_System.prototype.enableSave = function () {
+    this._saveEnabled = true;
+  };
+  Game_System.prototype.isSaveEnabled = function () {
+    return this._saveEnabled !== false;
+  };
+
+  function Game_Player() {
+    this._x = 12;
+    this._y = 34;
+    this._direction = 2;
+    this._newMapId = 0;
+    this._transferring = false;
+  }
+  Game_Player.prototype.reserveTransfer = function (mapId, x, y, d, fade) {
+    this._newMapId = mapId;
+    this._newX = x;
+    this._newY = y;
+    this._newDirection = d;
+    this._fadeType = fade;
+    this._transferring = true;
+  };
 
   const actors = {
     actor(id) {
@@ -114,11 +162,15 @@ function fakeRuntime(projectRoot, gameRoot) {
     value(id) { return this._data[id] || 0; },
     setValue(id, value) { this._data[id] = value; }
   };
-  const switches = {
-    _data: { 520: true },
-    value(id) { return this._data[id] === true; },
-    setValue(id, value) { this._data[id] = value === true; }
-  };
+
+  const switches = new Game_Switches();
+  switches._data = { 520: true };
+
+  const player = new Game_Player();
+  // Keep legacy plain fields used by existing bridge state collectors.
+  player.x = 12;
+  player.y = 34;
+  player.direction = 2;
 
   const window = {
     __codexBridgeConfig: {
@@ -131,12 +183,18 @@ function fakeRuntime(projectRoot, gameRoot) {
       trainerHooks: false,
       bridgeTickHooks: false
     },
+    Game_Switches,
+    Game_System,
+    Game_Player,
     $gameParty: party,
     $gameVariables: variables,
     $gameSwitches: switches,
+    $gameSystem: new Game_System(),
     $gameActors: actors,
-    $gameMap: { mapId() { return 8; } },
-    $gamePlayer: { x: 12, y: 34, direction: 2 },
+    $gameMap: {
+      mapId() { return window.__fakeMapId == null ? 8 : window.__fakeMapId; }
+    },
+    $gamePlayer: player,
     $dataItems: dataItems,
     $dataArmors: dataArmors,
     $dataWeapons: [],
@@ -152,14 +210,8 @@ function fakeRuntime(projectRoot, gameRoot) {
   return { window, party, variables, switches };
 }
 
-function assertBridgeBehavior(bridgeSource) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "nwr-prison-guard-"));
-  const projectRoot = path.join(root, "nwr_modkit");
-  const gameRoot = path.join(root, "game");
-  fs.mkdirSync(path.join(gameRoot, "www", "save"), { recursive: true });
-  fs.writeFileSync(path.join(gameRoot, "www", "save", "file1.rpgsave"), "fixture", "utf8");
-  const runtime = fakeRuntime(projectRoot, gameRoot);
-  const sandbox = {
+function createBridgeSandbox(runtime, gameRoot, projectRoot) {
+  return {
     window: runtime.window,
     document: { title: "Fake Game" },
     location: { href: "http://runtime.test/" },
@@ -179,6 +231,16 @@ function assertBridgeBehavior(bridgeSource) {
     setInterval() { return 0; },
     requestAnimationFrame() {}
   };
+}
+
+function assertBridgeBehavior(bridgeSource) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "nwr-prison-guard-"));
+  const projectRoot = path.join(root, "nwr_modkit");
+  const gameRoot = path.join(root, "game");
+  fs.mkdirSync(path.join(gameRoot, "www", "save"), { recursive: true });
+  fs.writeFileSync(path.join(gameRoot, "www", "save", "file1.rpgsave"), "fixture", "utf8");
+  const runtime = fakeRuntime(projectRoot, gameRoot);
+  const sandbox = createBridgeSandbox(runtime, gameRoot, projectRoot);
 
   vm.runInNewContext(bridgeSource, sandbox, { filename: "page-bridge.js" });
   const bridgeDir = path.join(projectRoot, "runtime", "bridge-state");
@@ -209,6 +271,71 @@ function assertBridgeBehavior(bridgeSource) {
   assert(runtime.switches._data[520] === false, "Switch520 should be cleared");
 }
 
+function assertPrisonBypassBehavior(bridgeSource) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "nwr-prison-bypass-"));
+  const projectRoot = path.join(root, "nwr_modkit");
+  const gameRoot = path.join(root, "game");
+  fs.mkdirSync(path.join(gameRoot, "www", "save"), { recursive: true });
+  const runtime = fakeRuntime(projectRoot, gameRoot);
+  // Allow trainer/prison hooks to install.
+  runtime.window.__codexBridgeConfig.trainerHooks = true;
+  runtime.window.__fakeMapId = 8;
+  const sandbox = createBridgeSandbox(runtime, gameRoot, projectRoot);
+
+  vm.runInNewContext(bridgeSource, sandbox, { filename: "page-bridge.js" });
+  const bridge = runtime.window.__codexLocalTrainerBridge;
+  const bridgeDir = path.join(projectRoot, "runtime", "bridge-state");
+
+  // Enable bypass
+  fs.writeFileSync(
+    path.join(bridgeDir, "commands.jsonl"),
+    `${JSON.stringify({ type: "trainer.options.set", options: { prisonBypass: true }, commandId: "bp-1", ts: Date.now() + 1 })}\n`,
+    "utf8"
+  );
+  bridge.__pollCommands();
+  bridge.__writeState();
+  let state = JSON.parse(fs.readFileSync(path.join(bridgeDir, "state.json"), "utf8"));
+  assert(state.trainerOptions.prisonBypass === true, "prisonBypass should be on");
+  assert(runtime.switches._data[520] === false, "enable should clear Switch520");
+
+  // Block Switch520
+  runtime.switches.setValue(520, true);
+  assert(runtime.switches._data[520] !== true, "setValue(520,true) must be blocked");
+
+  // Block disableSave
+  runtime.window.$gameSystem.disableSave();
+  assert(runtime.window.$gameSystem.isSaveEnabled() === true, "disableSave must be blocked");
+
+  // Block Map695 transfer
+  runtime.window.$gamePlayer.reserveTransfer(695, 4, 4, 2, 0);
+  assert(runtime.window.$gamePlayer._newMapId !== 695, "transfer to 695 must be blocked");
+  assert(runtime.window.$gamePlayer._transferring !== true, "blocked transfer must not start");
+
+  // Rescue: force prison state then toggle bypass off/on to trigger applyPrisonBypassNow
+  runtime.window.__fakeMapId = 695;
+  runtime.switches._data[520] = true;
+  runtime.window.$gameSystem._saveEnabled = false;
+  fs.writeFileSync(
+    path.join(bridgeDir, "commands.jsonl"),
+    [
+      JSON.stringify({ type: "trainer.options.set", options: { prisonBypass: false }, commandId: "bp-2", ts: Date.now() + 2 }),
+      JSON.stringify({ type: "trainer.options.set", options: { prisonBypass: true }, commandId: "bp-3", ts: Date.now() + 3 })
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  bridge.__pollCommands();
+  bridge.__writeState();
+  state = JSON.parse(fs.readFileSync(path.join(bridgeDir, "state.json"), "utf8"));
+  assert(runtime.switches._data[520] === false, "rescue should clear 520 on map 695");
+  assert(runtime.window.$gameSystem.isSaveEnabled() === true, "rescue should re-enable save");
+  assert(
+    runtime.window.$gamePlayer._newMapId && runtime.window.$gamePlayer._newMapId !== 695,
+    "rescue should transfer away from 695"
+  );
+  assert(state.prisonBypassStats, "state should expose prisonBypassStats");
+  assert(Number(state.prisonBypassStats.blockedSwitch520) >= 1, "should count blocked 520");
+}
+
 function run() {
   const testsDir = path.dirname(fileURLToPath(import.meta.url));
   const appDir = path.resolve(testsDir, "..");
@@ -219,6 +346,7 @@ function run() {
   const bridgeSource = readText(path.join(modkitDir, "runtime", "bridge", "page-bridge.js"));
   assertBridgeRuntimeGuard(bridgeSource);
   assertBridgeBehavior(bridgeSource);
+  assertPrisonBypassBehavior(bridgeSource);
   assertGuiSurface(
     readText(path.join(appDir, "index.html")),
     readText(path.join(appDir, "app.ts")),
