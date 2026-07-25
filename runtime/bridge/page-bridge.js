@@ -1938,6 +1938,11 @@
   function forceEnableSave() {
     const system = resolveSaveSystem();
     if (!system) return false;
+    const already =
+      typeof system.isSaveEnabled === "function"
+        ? system.isSaveEnabled()
+        : system._saveEnabled !== false;
+    if (already) return false;
     if (typeof system.enableSave === "function") {
       system.enableSave();
       return true;
@@ -1952,6 +1957,15 @@
   function transferPlayerTo(mapId, x, y) {
     const player = resolvePlayer();
     if (!player || typeof player.reserveTransfer !== "function") return false;
+    // 已在向非 695 目标传送时不再重复 reserve（避免重复计数）
+    if (
+      player._transferring &&
+      Number(player._newMapId) !== PRISON_MAP_ID &&
+      Number.isFinite(Number(player._newMapId)) &&
+      Number(player._newMapId) > 0
+    ) {
+      return false;
+    }
     const direction = typeof player.direction === "function" ? player.direction() : (player._direction || 2);
     player.reserveTransfer(Math.floor(mapId), Math.floor(x), Math.floor(y), direction, 0);
     return true;
@@ -1981,6 +1995,7 @@
     } catch (error) {
       bridge.lastError = String(error && error.stack || error);
     }
+    // 仅在 520 清除 / 存档恢复 / 从 695 转出 实际生效时计数
     if (rescued) bumpPrisonBypassStat("rescueCount");
     return { rescued, lastSafeMap: bridge.lastSafeMap, stats: { ...bridge.prisonBypassStats } };
   }
@@ -2106,6 +2121,7 @@
       trainerOptions: { ...bridge.options },
       prisonBypassStats: { ...bridge.prisonBypassStats },
       lastSafeMap: bridge.lastSafeMap,
+      prisonBypassHooksPatched: !!bridge.prisonBypassHooksPatched,
       rateStats: { ...bridge.rateStats },
       battleStats: { ...bridge.battleStats },
       hookTargets: bridge.hookTargets.slice(),

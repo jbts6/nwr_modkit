@@ -54,6 +54,7 @@ const ACTION_ROWS = [
   ["battleKillBtn", "Kill battle enemies", "battle.killEnemies", "NwrGuiBridgeCommands.battleKillEnemies"],
   ["battleEscapeBtn", "Battle escape", "battle.escape", "NwrGuiBridgeCommands.battleEscape"],
   ["partyRecoverBtn", "Recover party", "party.recover", "NwrGuiBridgeCommands.partyRecover"],
+  ["prisonBypassBtn", "Toggle prison bypass", "trainer.options.set", "sendOptions"],
   ["prisonRepairBtn", "Repair prison guard risks", "prison.repair", "NwrGuiBridgeCommands.prisonRepair"],
   ["mapTransferBtn", "Transfer map", "map.transfer", "transferMap"],
   ["recordPositionBtn", "Record current position", null, "local current state snapshot"],
