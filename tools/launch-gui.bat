@@ -1,11 +1,16 @@
 @echo off
 setlocal
 
-rem 切换到本脚本所在目录，避免工作目录问题
-cd /d "%~dp0"
+rem 直接指向真实的 ps1 脚本（绝对路径，不依赖本 bat 所在位置）
+set "POWERSHELL_SCRIPT=C:\Games\Nightmare without return\nwr_modkit\tools\launch-gui.ps1"
 
-rem 运行 PowerShell 启动脚本
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0launch-gui.ps1"
+if not exist "%POWERSHELL_SCRIPT%" (
+  echo [launch-gui] 找不到脚本：%POWERSHELL_SCRIPT%
+  pause
+  exit /b 1
+)
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%POWERSHELL_SCRIPT%"
 
 if errorlevel 1 (
   echo.
