@@ -128,6 +128,26 @@ function fakeRuntime(projectRoot, gameRoot) {
     this._transferring = true;
   };
 
+  function Game_Enemy() {}
+  Game_Enemy.prototype.dropItemRate = function () { return 1; };
+  Game_Enemy.prototype.makeDropItems = function () { return []; };
+
+  function Game_Action() {}
+  Game_Action.prototype.apply = function () {};
+
+  function Game_Actor() {}
+  Game_Actor.prototype.gainExp = function () {};
+
+  function Game_Party() {}
+  Game_Party.prototype.gainGold = function () {};
+
+  const BattleManager = {
+    makeRewards() {},
+    gainRewards() {},
+    gainExp() {},
+    gainGold() {}
+  };
+
   const actors = {
     actor(id) {
       return {
@@ -186,6 +206,11 @@ function fakeRuntime(projectRoot, gameRoot) {
     Game_Switches,
     Game_System,
     Game_Player,
+    Game_Enemy,
+    Game_Action,
+    Game_Actor,
+    Game_Party,
+    BattleManager,
     $gameParty: party,
     $gameVariables: variables,
     $gameSwitches: switches,
@@ -277,6 +302,15 @@ function assertPrisonBypassBehavior(bridgeSource) {
   const gameRoot = path.join(root, "game");
   fs.mkdirSync(path.join(gameRoot, "www", "save"), { recursive: true });
   const runtime = fakeRuntime(projectRoot, gameRoot);
+  const rewardMethods = {
+    dropItemRate: runtime.window.Game_Enemy.prototype.dropItemRate,
+    makeDropItems: runtime.window.Game_Enemy.prototype.makeDropItems,
+    makeRewards: runtime.window.BattleManager.makeRewards,
+    gainRewards: runtime.window.BattleManager.gainRewards,
+    gainExp: runtime.window.Game_Actor.prototype.gainExp,
+    gainGold: runtime.window.Game_Party.prototype.gainGold,
+    applyAction: runtime.window.Game_Action.prototype.apply
+  };
   // Allow trainer/prison hooks to install.
   runtime.window.__codexBridgeConfig.trainerHooks = true;
   runtime.window.__fakeMapId = 8;
@@ -297,6 +331,16 @@ function assertPrisonBypassBehavior(bridgeSource) {
   let state = JSON.parse(fs.readFileSync(path.join(bridgeDir, "state.json"), "utf8"));
   assert(state.trainerOptions.prisonBypass === true, "prisonBypass should be on");
   assert(runtime.switches._data[520] === false, "enable should clear Switch520");
+  assert(
+    runtime.window.Game_Enemy.prototype.dropItemRate === rewardMethods.dropItemRate &&
+      runtime.window.Game_Enemy.prototype.makeDropItems === rewardMethods.makeDropItems &&
+      runtime.window.BattleManager.makeRewards === rewardMethods.makeRewards &&
+      runtime.window.BattleManager.gainRewards === rewardMethods.gainRewards &&
+      runtime.window.Game_Actor.prototype.gainExp === rewardMethods.gainExp &&
+      runtime.window.Game_Party.prototype.gainGold === rewardMethods.gainGold &&
+      runtime.window.Game_Action.prototype.apply === rewardMethods.applyAction,
+    "prisonBypass must not patch unrelated reward or battle methods"
+  );
 
   // Block Switch520
   runtime.switches.setValue(520, true);

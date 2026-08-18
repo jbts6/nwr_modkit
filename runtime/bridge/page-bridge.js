@@ -1264,10 +1264,33 @@
     return true;
   }
 
+  function rewardHooksWanted() {
+    const options = bridge.options;
+    return (
+      Number(options.expRate || 1) !== 1 ||
+      Number(options.goldRate || 1) !== 1 ||
+      Number(options.dropRate || 1) !== 1
+    );
+  }
+
+  function battleHooksWanted() {
+    const options = bridge.options;
+    return !!options.noSkillCost || !!options.oneHitKill || !!options.invincible;
+  }
+
+  function prisonHooksWanted() {
+    return !!bridge.options.prisonBypass;
+  }
+
   function patchTrainerHooks() {
     let count = 0;
     const hooked = [];
-    const enemyProtos = resolvePrototypeTargets("Game_Enemy", ["Game_Enemy", "GameEnemy"]);
+    const rewardHooksEnabled = rewardHooksWanted();
+    const battleHooksEnabled = battleHooksWanted();
+    const prisonHooksEnabled = prisonHooksWanted();
+    const enemyProtos = rewardHooksEnabled
+      ? resolvePrototypeTargets("Game_Enemy", ["Game_Enemy", "GameEnemy"])
+      : [];
     enemyProtos.forEach((target) => {
       if (patchMethod(target.object, "dropItemRate", `${target.label}.dropItemRate`, function (original, args) {
         const base = Number(original.apply(this, args) || 0);
@@ -1333,7 +1356,7 @@
       });
       return true;
     };
-    resolveBattleManagers().forEach((target) => {
+    (rewardHooksEnabled ? resolveBattleManagers() : []).forEach((target) => {
       if (patchMethod(target.object, "makeRewards", `${target.label}.makeRewards`, function (original, args) {
         const result = original.apply(this, args);
         applyRewards(this);
@@ -1371,9 +1394,12 @@
       }
     });
 
-    uniqueTargets(resolvePrototypeTargets("Game_Actor", ["Game_Actor", "GameActor"]).concat(
-      partyMemberPrototypeTargets("runtime.party")
-    )).forEach((target) => {
+    uniqueTargets(rewardHooksEnabled
+      ? resolvePrototypeTargets("Game_Actor", ["Game_Actor", "GameActor"]).concat(
+        partyMemberPrototypeTargets("runtime.party")
+      )
+      : []
+    ).forEach((target) => {
       if (patchMethod(target.object, "gainExp", `${target.label}.gainExp`, function (original, args) {
         if (bridge.suppressRates > 0 || bridge.options.expRate === 1 || !isInBattleRewardContext()) {
           return original.apply(this, args);
@@ -1389,7 +1415,10 @@
       }
     });
 
-    resolvePrototypeTargets("Game_Party", ["Game_Party", "GameParty"]).forEach((target) => {
+    (rewardHooksEnabled
+      ? resolvePrototypeTargets("Game_Party", ["Game_Party", "GameParty"])
+      : []
+    ).forEach((target) => {
       if (patchMethod(target.object, "gainGold", `${target.label}.gainGold`, function (original, args) {
         if (bridge.suppressRates > 0 || bridge.options.goldRate === 1 || !isInBattleRewardContext()) {
           return original.apply(this, args);
@@ -1405,7 +1434,10 @@
       }
     });
 
-    resolvePrototypeTargets("Game_Action", ["Game_Action", "GameAction"]).forEach((target) => {
+    (battleHooksEnabled
+      ? resolvePrototypeTargets("Game_Action", ["Game_Action", "GameAction"])
+      : []
+    ).forEach((target) => {
       if (patchMethod(target.object, "apply", `${target.label}.apply`, function (original, args) {
         const subject = typeof this.subject === "function" ? this.subject() : null;
         const targetBattler = args && args[0];
@@ -1436,9 +1468,12 @@
       }
     });
 
-    uniqueTargets(resolvePrototypeTargets("Game_Battler", ["Game_Battler", "GameBattler"]).concat(
-      partyMemberPrototypeTargets("runtime.party")
-    )).forEach((target) => {
+    uniqueTargets(battleHooksEnabled
+      ? resolvePrototypeTargets("Game_Battler", ["Game_Battler", "GameBattler"]).concat(
+        partyMemberPrototypeTargets("runtime.party")
+      )
+      : []
+    ).forEach((target) => {
       if (patchMethod(target.object, "setHp", `${target.label}.setHp`, function (original, args) {
         if (shouldBlockHpDecrease(this, args[0])) {
           const current = battlerHp(this);
@@ -1478,9 +1513,12 @@
       }
     });
 
-    uniqueTargets(resolvePrototypeTargets("Game_BattlerBase", ["Game_BattlerBase", "GameBattlerBase"]).concat(
-      partyMemberPrototypeTargets("runtime.party")
-    )).forEach((target) => {
+    uniqueTargets(battleHooksEnabled
+      ? resolvePrototypeTargets("Game_BattlerBase", ["Game_BattlerBase", "GameBattlerBase"]).concat(
+        partyMemberPrototypeTargets("runtime.party")
+      )
+      : []
+    ).forEach((target) => {
       if (patchMethod(target.object, "setHp", `${target.label}.setHp`, function (original, args) {
         if (shouldBlockHpDecrease(this, args[0])) {
           const current = battlerHp(this);
@@ -1554,9 +1592,12 @@
       }
     });
 
-    uniqueTargets(resolvePrototypeTargets("Game_Actor", ["Game_Actor", "GameActor"]).concat(
-      partyMemberPrototypeTargets("runtime.party")
-    )).forEach((target) => {
+    uniqueTargets(battleHooksEnabled
+      ? resolvePrototypeTargets("Game_Actor", ["Game_Actor", "GameActor"]).concat(
+        partyMemberPrototypeTargets("runtime.party")
+      )
+      : []
+    ).forEach((target) => {
       if (patchMethod(target.object, "setHp", `${target.label}.setHp`, function (original, args) {
         if (shouldBlockHpDecrease(this, args[0])) {
           const current = battlerHp(this);
@@ -1621,7 +1662,10 @@
     });
 
     // Prison bypass: Switch 520
-    resolvePrototypeTargets("Game_Switches", ["Game_Switches"]).forEach((target) => {
+    (prisonHooksEnabled
+      ? resolvePrototypeTargets("Game_Switches", ["Game_Switches"])
+      : []
+    ).forEach((target) => {
       if (patchMethod(target.object, "setValue", `${target.label}.setValue`, function (original, args) {
         const id = Math.floor(Number(args[0]));
         const value = args[1];
@@ -1638,7 +1682,10 @@
     });
 
     // Prison bypass: disableSave
-    resolvePrototypeTargets("Game_System", ["Game_System"]).forEach((target) => {
+    (prisonHooksEnabled
+      ? resolvePrototypeTargets("Game_System", ["Game_System"])
+      : []
+    ).forEach((target) => {
       if (patchMethod(target.object, "disableSave", `${target.label}.disableSave`, function (original, args) {
         if (bridge.options.prisonBypass) {
           bumpPrisonBypassStat("blockedDisableSave");
@@ -1653,7 +1700,10 @@
     });
 
     // Prison bypass: reserveTransfer Map695
-    resolvePrototypeTargets("Game_Player", ["Game_Player"]).forEach((target) => {
+    (prisonHooksEnabled
+      ? resolvePrototypeTargets("Game_Player", ["Game_Player"])
+      : []
+    ).forEach((target) => {
       if (patchMethod(target.object, "reserveTransfer", `${target.label}.reserveTransfer`, function (original, args) {
         const mapId = Math.floor(Number(args[0]));
         if (bridge.options.prisonBypass && mapId === PRISON_MAP_ID) {
@@ -1675,16 +1725,7 @@
 
   function trainerHooksWanted() {
     if (bridgeConfig.trainerHooks === false) return false;
-    const options = bridge.options;
-    return (
-      Number(options.expRate || 1) !== 1 ||
-      Number(options.goldRate || 1) !== 1 ||
-      Number(options.dropRate || 1) !== 1 ||
-      !!options.noSkillCost ||
-      !!options.oneHitKill ||
-      !!options.invincible ||
-      !!options.prisonBypass
-    );
+    return rewardHooksWanted() || battleHooksWanted() || prisonHooksWanted();
   }
 
   function ensureTrainerHooks() {
