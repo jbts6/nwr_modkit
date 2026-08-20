@@ -15,6 +15,7 @@
     "test:topology": "node tests/build-topology.mjs",
     "test:protocol": "node tests/protocol-check.mjs && node tests/bridge-command-builders.mjs --quiet && node tests/runtime-safety-policy.mjs",
     "test:prison": "node tests/prison-guard-contract.mjs",
+    "test:through-quick-save": "node tests/through-quick-save-contract.mjs",
     "test:routes": "node tests/route-inventory.mjs",
     "test:route-selector": "node tests/route-selector-contract.mjs",
     "test:state": "node tests/runtime-state-contract.mjs",
