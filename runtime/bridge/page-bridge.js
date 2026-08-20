@@ -14,8 +14,21 @@
       noSkillCost: false,
       oneHitKill: false,
       invincible: false,
+      playerThrough: false,
+      quickSaveEnabled: true,
       prisonBypass: false
     },
+    playerThroughActive: null,
+    quickSave: {
+      enabled: true,
+      key: "~",
+      slotId: 1,
+      lastAttemptAt: null,
+      lastSuccessAt: null,
+      lastResult: "idle",
+      lastMessage: null
+    },
+    quickSaveLastTriggerAt: 0,
     rateDepth: 0,
     suppressRates: 0,
     noCostDepth: 0,
@@ -1102,6 +1115,131 @@
     } catch (_) {}
   }
 
+  function applyPlayerThrough() {
+    const player = resolvePlayer();
+    if (!player) {
+      bridge.playerThroughActive = null;
+      return { requested: !!bridge.options.playerThrough, active: null, applied: false };
+    }
+    if (typeof player.setThrough !== "function") {
+      throw new Error("game player setThrough is unavailable");
+    }
+    player.setThrough(!!bridge.options.playerThrough);
+    const active = typeof player.isThrough === "function"
+      ? !!player.isThrough()
+      : !!player._through;
+    bridge.playerThroughActive = active;
+    return { requested: !!bridge.options.playerThrough, active, applied: true };
+  }
+
+  function showQuickSaveMessage(message, success) {
+    if (!document || typeof document.createElement !== "function" || !document.body) return false;
+    try {
+      let root = document.getElementById("codex-quick-save-message");
+      if (!root) {
+        root = document.createElement("div");
+        root.id = "codex-quick-save-message";
+        root.style.position = "fixed";
+        root.style.left = "50%";
+        root.style.top = "18%";
+        root.style.transform = "translate(-50%, -50%)";
+        root.style.zIndex = "2147483647";
+        root.style.padding = "8px 14px";
+        root.style.borderRadius = "4px";
+        root.style.pointerEvents = "none";
+        root.style.font = "16px/1.4 Arial, Microsoft YaHei, sans-serif";
+        document.body.appendChild(root);
+      }
+      root.textContent = message;
+      root.style.color = success ? "#b8f5c0" : "#ffd2d2";
+      root.style.background = success ? "rgba(24, 92, 42, 0.92)" : "rgba(120, 28, 28, 0.92)";
+      root.style.display = "block";
+      setTimeout(() => {
+        if (root) root.style.display = "none";
+      }, 1600);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function isMapScene(scene) {
+    if (!scene) return false;
+    const candidates = [window.Scene_Map, tkValue("SceneMap"), tkValue("Scene_Map")].filter(Boolean);
+    if (candidates.some((ctor) => typeof ctor === "function" && scene instanceof ctor)) return true;
+    return String(scene.constructor && scene.constructor.name || "") === "Scene_Map";
+  }
+
+  function quickSaveBlockReason() {
+    const sceneManager = resolveSceneManager();
+    const scene = sceneManager && sceneManager._scene;
+    if (!isMapScene(scene)) return "当前不在地图探索界面";
+    if (typeof document.hasFocus === "function" && !document.hasFocus()) return "游戏窗口未获得焦点";
+    if (sceneManager && typeof sceneManager.isSceneChanging === "function" && sceneManager.isSceneChanging()) return "场景正在切换";
+    const player = resolvePlayer();
+    if (!player) return "玩家尚未初始化";
+    if ((typeof player.isTransferring === "function" && player.isTransferring()) || player._transferring) return "地图正在切换";
+    const map = resolveMap();
+    if (!map) return "地图尚未初始化";
+    if (typeof map.isEventRunning === "function" && map.isEventRunning()) return "事件正在执行";
+    const interpreter = map._interpreter;
+    if (interpreter && typeof interpreter.isRunning === "function" && interpreter.isRunning()) return "事件正在执行";
+    const system = resolveSaveSystem();
+    if (!system) return "游戏系统尚未初始化";
+    if (typeof system.isSaveEnabled === "function" && !system.isSaveEnabled()) return "当前禁止存档";
+    if (typeof system.isSaveEnabled !== "function" && system._saveEnabled === false) return "当前禁止存档";
+    const dataManager = resolveDataManager();
+    if (!dataManager || typeof dataManager.saveGame !== "function") return "保存接口不可用";
+    return "";
+  }
+
+  function tryQuickSave() {
+    const now = Date.now();
+    bridge.quickSave.lastAttemptAt = now;
+    const blocked = quickSaveBlockReason();
+    if (blocked) {
+      bridge.quickSave.lastResult = "blocked";
+      bridge.quickSave.lastMessage = blocked;
+      showQuickSaveMessage(blocked, false);
+      return { ok: false, result: "blocked", message: blocked };
+    }
+    try {
+      const result = saveGameToSlot(1);
+      if (result && result.result === "false") throw new Error("saveGame returned false");
+      bridge.quickSave.lastSuccessAt = now;
+      bridge.quickSave.lastResult = "success";
+      bridge.quickSave.lastMessage = "快速存档完成：槽位 1";
+      if (window.SoundManager && typeof window.SoundManager.playSave === "function") window.SoundManager.playSave();
+      showQuickSaveMessage(bridge.quickSave.lastMessage, true);
+      return { ok: true, result: "success", message: bridge.quickSave.lastMessage, save: result };
+    } catch (error) {
+      bridge.lastError = String(error && error.stack || error);
+      bridge.quickSave.lastResult = "error";
+      bridge.quickSave.lastMessage = "快速存档失败";
+      showQuickSaveMessage(bridge.quickSave.lastMessage, false);
+      log("quick save failed", { error: bridge.lastError });
+      return { ok: false, result: "error", message: bridge.quickSave.lastMessage };
+    }
+  }
+
+  function installQuickSaveHotkey() {
+    if (!document || typeof document.addEventListener !== "function" || document.__codexQuickSaveHotkey) return false;
+    document.addEventListener("keydown", function (event) {
+      const target = event && event.target;
+      const tagName = target && String(target.tagName || "").toUpperCase();
+      const editable = !!(target && (target.isContentEditable || tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT"));
+      const isTilde = event && (event.key === "~" || (event.code === "Backquote" && event.shiftKey === true));
+      if (!bridge.options.quickSaveEnabled || !isTilde || event.repeat || event.ctrlKey || event.altKey || event.metaKey || editable) return;
+      const now = Date.now();
+      if (now - bridge.quickSaveLastTriggerAt < 800) return;
+      bridge.quickSaveLastTriggerAt = now;
+      if (typeof event.preventDefault === "function") event.preventDefault();
+      tryQuickSave();
+    }, true);
+    Object.defineProperty(document, "__codexQuickSaveHotkey", { value: true, configurable: true });
+    return true;
+  }
+
   function setTrainerOptions(options) {
     if (!options || typeof options !== "object") return { ...bridge.options };
     const previousNoCost = bridge.options.noSkillCost;
@@ -1112,6 +1250,14 @@
     if (Object.prototype.hasOwnProperty.call(options, "noSkillCost")) bridge.options.noSkillCost = toBool(options.noSkillCost);
     if (Object.prototype.hasOwnProperty.call(options, "oneHitKill")) bridge.options.oneHitKill = toBool(options.oneHitKill);
     if (Object.prototype.hasOwnProperty.call(options, "invincible")) bridge.options.invincible = toBool(options.invincible);
+    if (Object.prototype.hasOwnProperty.call(options, "playerThrough")) {
+      bridge.options.playerThrough = toBool(options.playerThrough);
+      applyPlayerThrough();
+    }
+    if (Object.prototype.hasOwnProperty.call(options, "quickSaveEnabled")) {
+      bridge.options.quickSaveEnabled = toBool(options.quickSaveEnabled);
+      bridge.quickSave.enabled = bridge.options.quickSaveEnabled;
+    }
     if (Object.prototype.hasOwnProperty.call(options, "prisonBypass")) {
       bridge.options.prisonBypass = toBool(options.prisonBypass);
     }
@@ -2120,6 +2266,13 @@
     const switches = resolveSwitches();
     const dataManager = resolveDataManager();
     ensureTrainerHooks();
+    if (bridge.options.playerThrough) {
+      try {
+        applyPlayerThrough();
+      } catch (error) {
+        bridge.lastError = String(error && error.stack || error);
+      }
+    }
     updateLastSafeMap();
     if (bridge.options.prisonBypass) {
       // 轻量：若已在 695 或 520 仍开，尝试脱困（覆盖读档）
@@ -2160,6 +2313,8 @@
       partyMembers: getPartyMembers(party).map(actorInfo).filter(Boolean),
       prisonGuardReport: collectPrisonGuardReport(),
       trainerOptions: { ...bridge.options },
+      playerThroughActive: bridge.playerThroughActive == null ? null : !!bridge.playerThroughActive,
+      quickSave: { ...bridge.quickSave },
       prisonBypassStats: { ...bridge.prisonBypassStats },
       lastSafeMap: bridge.lastSafeMap,
       prisonBypassHooksPatched: !!bridge.prisonBypassHooksPatched,
@@ -3094,6 +3249,7 @@
   if (bridgeConfig.overlay !== false) {
     installInGameOverlay();
   }
+  installQuickSaveHotkey();
   if (bridgeConfig.dataDumpHooks !== false) {
     installEarlyDataHooks();
   }

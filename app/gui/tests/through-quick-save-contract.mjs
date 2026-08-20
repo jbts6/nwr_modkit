@@ -108,22 +108,17 @@ function writeCommand(runtime, command) {
   runtime.window.__codexLocalTrainerBridge.__writeState();
 }
 
-assert(indexHtml.includes('id="playerThroughBtn"'), "GUI must expose playerThroughBtn");
-assert(indexHtml.includes('id="quickSaveBtn"'), "GUI must expose quickSaveBtn");
-assert(appSource.includes("playerThrough"), "app.ts must toggle playerThrough");
-assert(appSource.includes("quickSaveEnabled"), "app.ts must toggle quickSaveEnabled");
-assert(guardrailSource.includes("playerThroughBtn"), "guardrails must register playerThroughBtn");
-assert(guardrailSource.includes("quickSaveBtn"), "guardrails must register quickSaveBtn");
-assert(bridgeSource.includes("playerThroughActive"), "bridge must expose playerThroughActive");
-assert(bridgeSource.includes("quickSave"), "bridge must expose quickSave state");
-
 const runtime = createRuntime(fs.mkdtempSync(path.join(os.tmpdir(), "nwr-through-quick-save-")));
 vm.runInNewContext(bridgeSource, runtime.sandbox, { filename: "page-bridge.js" });
 
 writeCommand(runtime, { type: "trainer.options.set", options: { playerThrough: true }, commandId: "through-on", ts: Date.now() });
 assert.equal(runtime.player._through, true, "playerThrough=true must enable player collision bypass");
+let state = JSON.parse(fs.readFileSync(path.join(runtime.modkitRoot, "runtime", "bridge-state", "state.json"), "utf8"));
+assert.equal(state.playerThroughActive, true, "bridge state must expose active player through status");
 writeCommand(runtime, { type: "trainer.options.set", options: { playerThrough: false }, commandId: "through-off", ts: Date.now() + 1 });
 assert.equal(runtime.player._through, false, "playerThrough=false must restore collision");
+state = JSON.parse(fs.readFileSync(path.join(runtime.modkitRoot, "runtime", "bridge-state", "state.json"), "utf8"));
+assert.equal(state.playerThroughActive, false, "bridge state must expose disabled player through status");
 
 dispatchKey(runtime, { key: "~", code: "Backquote", repeat: false });
 assert.deepEqual(runtime.savedIds, [1], "quick save must always target slot 1");
@@ -136,5 +131,14 @@ assert.deepEqual(runtime.savedIds, [], "battle scene must block quick save");
 runtime.sceneManager._scene = new runtime.window.Scene_Map();
 dispatchKey(runtime, { key: "~", code: "Backquote", repeat: true });
 assert.deepEqual(runtime.savedIds, [], "repeated keydown must be ignored");
+
+assert(indexHtml.includes('id="playerThroughBtn"'), "GUI must expose playerThroughBtn");
+assert(indexHtml.includes('id="quickSaveBtn"'), "GUI must expose quickSaveBtn");
+assert(appSource.includes("playerThrough"), "app.ts must toggle playerThrough");
+assert(appSource.includes("quickSaveEnabled"), "app.ts must toggle quickSaveEnabled");
+assert(guardrailSource.includes("playerThroughBtn"), "guardrails must register playerThroughBtn");
+assert(guardrailSource.includes("quickSaveBtn"), "guardrails must register quickSaveBtn");
+assert(bridgeSource.includes("playerThroughActive"), "bridge must expose playerThroughActive");
+assert(bridgeSource.includes("quickSave"), "bridge must expose quickSave state");
 
 console.log("through and quick save contract");
