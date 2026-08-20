@@ -51,6 +51,8 @@ const ACTION_ROWS = [
   ["noCostBtn", "Toggle no skill cost", "trainer.options.set", "sendOptions"],
   ["oneHitKillBtn", "Toggle one hit kill", "trainer.options.set", "sendOptions"],
   ["invincibleBtn", "Toggle invincible", "trainer.options.set", "sendOptions"],
+  ["playerThroughBtn", "Toggle player through", "trainer.options.set", "sendOptions"],
+  ["quickSaveBtn", "Toggle quick save hotkey", "trainer.options.set", "sendOptions"],
   ["battleKillBtn", "Kill battle enemies", "battle.killEnemies", "NwrGuiBridgeCommands.battleKillEnemies"],
   ["battleEscapeBtn", "Battle escape", "battle.escape", "NwrGuiBridgeCommands.battleEscape"],
   ["partyRecoverBtn", "Recover party", "party.recover", "NwrGuiBridgeCommands.partyRecover"],

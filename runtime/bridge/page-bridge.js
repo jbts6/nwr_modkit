@@ -23,12 +23,14 @@
       enabled: true,
       key: "~",
       slotId: 1,
+      inFlight: false,
       lastAttemptAt: null,
       lastSuccessAt: null,
       lastResult: "idle",
       lastMessage: null
     },
     quickSaveLastTriggerAt: 0,
+    playerThroughSaveDepth: 0,
     rateDepth: 0,
     suppressRates: 0,
     noCostDepth: 0,
@@ -1115,6 +1117,19 @@
     } catch (_) {}
   }
 
+  function readPlayerThroughActive() {
+    const player = resolvePlayer();
+    if (!player) {
+      bridge.playerThroughActive = null;
+      return null;
+    }
+    const active = typeof player.isThrough === "function"
+      ? !!player.isThrough()
+      : !!player._through;
+    bridge.playerThroughActive = active;
+    return active;
+  }
+
   function applyPlayerThrough() {
     const player = resolvePlayer();
     if (!player) {
@@ -1125,11 +1140,49 @@
       throw new Error("game player setThrough is unavailable");
     }
     player.setThrough(!!bridge.options.playerThrough);
-    const active = typeof player.isThrough === "function"
-      ? !!player.isThrough()
-      : !!player._through;
-    bridge.playerThroughActive = active;
+    const active = readPlayerThroughActive();
     return { requested: !!bridge.options.playerThrough, active, applied: true };
+  }
+
+  function releasePlayerThroughSaveSuspension() {
+    bridge.playerThroughSaveDepth = Math.max(0, Number(bridge.playerThroughSaveDepth || 0) - 1);
+    if (bridge.playerThroughSaveDepth > 0) return;
+    try {
+      if (bridge.options.playerThrough) applyPlayerThrough();
+      else readPlayerThroughActive();
+    } catch (error) {
+      bridge.lastError = String(error && error.stack || error);
+    }
+  }
+
+  function withoutTrainerThroughInSave(callback) {
+    const player = resolvePlayer();
+    const shouldSuspend = !!bridge.options.playerThrough && player && typeof player.setThrough === "function";
+    if (!shouldSuspend) return callback();
+    const firstSuspension = bridge.playerThroughSaveDepth === 0;
+    bridge.playerThroughSaveDepth += 1;
+    if (firstSuspension) {
+      player.setThrough(false);
+      readPlayerThroughActive();
+    }
+    let result;
+    try {
+      result = callback();
+    } catch (error) {
+      releasePlayerThroughSaveSuspension();
+      throw error;
+    }
+    if (result && typeof result.then === "function") {
+      return Promise.resolve(result).then(value => {
+        releasePlayerThroughSaveSuspension();
+        return value;
+      }, error => {
+        releasePlayerThroughSaveSuspension();
+        throw error;
+      });
+    }
+    releasePlayerThroughSaveSuspension();
+    return result;
   }
 
   function showQuickSaveMessage(message, success) {
@@ -1171,6 +1224,7 @@
   }
 
   function quickSaveBlockReason() {
+    if (bridge.quickSave.inFlight) return "快速存档正在进行";
     const sceneManager = resolveSceneManager();
     const scene = sceneManager && sceneManager._scene;
     if (!isMapScene(scene)) return "当前不在地图探索界面";
@@ -1201,22 +1255,45 @@
       bridge.quickSave.lastResult = "blocked";
       bridge.quickSave.lastMessage = blocked;
       showQuickSaveMessage(blocked, false);
+      writeState();
       return { ok: false, result: "blocked", message: blocked };
     }
+    bridge.quickSave.inFlight = true;
+    bridge.quickSave.lastMessage = "快速存档中：槽位 1";
+    writeState();
     try {
-      const result = saveGameToSlot(1);
-      if (result && result.result === "false") throw new Error("saveGame returned false");
-      bridge.quickSave.lastSuccessAt = now;
-      bridge.quickSave.lastResult = "success";
-      bridge.quickSave.lastMessage = "快速存档完成：槽位 1";
-      if (window.SoundManager && typeof window.SoundManager.playSave === "function") window.SoundManager.playSave();
-      showQuickSaveMessage(bridge.quickSave.lastMessage, true);
-      return { ok: true, result: "success", message: bridge.quickSave.lastMessage, save: result };
+      const result = saveGameToSlot(1, true);
+      const complete = value => {
+        if (value && (value.result === false || value.result === "false")) throw new Error("saveGame returned false");
+        bridge.quickSave.inFlight = false;
+        bridge.quickSave.lastSuccessAt = now;
+        bridge.quickSave.lastResult = "success";
+        bridge.quickSave.lastMessage = "快速存档完成：槽位 1";
+        if (window.SoundManager && typeof window.SoundManager.playSave === "function") window.SoundManager.playSave();
+        showQuickSaveMessage(bridge.quickSave.lastMessage, true);
+        writeState();
+        return { ok: true, result: "success", message: bridge.quickSave.lastMessage, save: value };
+      };
+      if (result && typeof result.then === "function") {
+        return Promise.resolve(result).then(complete).catch(error => {
+          bridge.lastError = String(error && error.stack || error);
+          bridge.quickSave.inFlight = false;
+          bridge.quickSave.lastResult = "error";
+          bridge.quickSave.lastMessage = "快速存档失败";
+          showQuickSaveMessage(bridge.quickSave.lastMessage, false);
+          writeState();
+          log("quick save failed", { error: bridge.lastError });
+          return { ok: false, result: "error", message: bridge.quickSave.lastMessage };
+        });
+      }
+      return complete(result);
     } catch (error) {
       bridge.lastError = String(error && error.stack || error);
+      bridge.quickSave.inFlight = false;
       bridge.quickSave.lastResult = "error";
       bridge.quickSave.lastMessage = "快速存档失败";
       showQuickSaveMessage(bridge.quickSave.lastMessage, false);
+      writeState();
       log("quick save failed", { error: bridge.lastError });
       return { ok: false, result: "error", message: bridge.quickSave.lastMessage };
     }
@@ -1228,7 +1305,7 @@
       const target = event && event.target;
       const tagName = target && String(target.tagName || "").toUpperCase();
       const editable = !!(target && (target.isContentEditable || tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT"));
-      const isTilde = event && (event.key === "~" || (event.code === "Backquote" && event.shiftKey === true));
+      const isTilde = event && (event.key === "~" || event.key === "`" || event.code === "Backquote");
       if (!bridge.options.quickSaveEnabled || !isTilde || event.repeat || event.ctrlKey || event.altKey || event.metaKey || editable) return;
       const now = Date.now();
       if (now - bridge.quickSaveLastTriggerAt < 800) return;
@@ -1252,7 +1329,8 @@
     if (Object.prototype.hasOwnProperty.call(options, "invincible")) bridge.options.invincible = toBool(options.invincible);
     if (Object.prototype.hasOwnProperty.call(options, "playerThrough")) {
       bridge.options.playerThrough = toBool(options.playerThrough);
-      applyPlayerThrough();
+      if (bridge.playerThroughSaveDepth > 0) readPlayerThroughActive();
+      else applyPlayerThrough();
     }
     if (Object.prototype.hasOwnProperty.call(options, "quickSaveEnabled")) {
       bridge.options.quickSaveEnabled = toBool(options.quickSaveEnabled);
@@ -2236,11 +2314,14 @@
     return !!value;
   }
 
-  function saveGameToSlot(savefileId) {
+  function saveGameToSlot(savefileId, awaitResult) {
     const dataManager = resolveDataManager();
     if (!dataManager || typeof dataManager.saveGame !== "function") throw new Error("saveGame is unavailable");
     const id = Math.floor(requireNumber(savefileId || 1, "id"));
-    const result = dataManager.saveGame(id);
+    const result = withoutTrainerThroughInSave(() => dataManager.saveGame(id));
+    if (awaitResult && result && typeof result.then === "function") {
+      return Promise.resolve(result).then(value => ({ id, result: value }));
+    }
     return { id, result: String(result) };
   }
 
@@ -2266,12 +2347,14 @@
     const switches = resolveSwitches();
     const dataManager = resolveDataManager();
     ensureTrainerHooks();
-    if (bridge.options.playerThrough) {
+    if (bridge.options.playerThrough && bridge.playerThroughSaveDepth === 0) {
       try {
         applyPlayerThrough();
       } catch (error) {
         bridge.lastError = String(error && error.stack || error);
       }
+    } else {
+      readPlayerThroughActive();
     }
     updateLastSafeMap();
     if (bridge.options.prisonBypass) {

@@ -84,6 +84,9 @@ type SendCommandOptions = { readonly silent?: boolean };
     prisonGuardList: $("prisonGuardList"),
     prisonBypassBtn: $("prisonBypassBtn"),
     prisonRepairBtn: $("prisonRepairBtn"),
+    playerThroughBtn: $("playerThroughBtn"),
+    quickSaveBtn: $("quickSaveBtn"),
+    quickSaveState: $("quickSaveState"),
     variableList: $("variableList"),
     variableListCount: $("variableListCount"),
     switchList: $("switchList"),
@@ -1302,12 +1305,14 @@ type SendCommandOptions = { readonly silent?: boolean };
     refreshPreparedGameControls();
     if (!view.hasState) {
       dom.battleState.textContent = "";
+      updateQuickTools({}, {}, false);
       return;
     }
 
     const options = view.fresh ? (state.trainerOptions || {}) : {};
     if (view.fresh) updateOptionInputs(options);
     updateBattleButtons(options, view.fresh && state.hooksPatched, view.fresh ? state.rateStats : null, view.fresh ? state.battleStats : null);
+    updateQuickTools(options, view.fresh ? state : {}, view.fresh && view.versionOk);
   }
 
   function updateOptionInputs(options) {
@@ -1331,6 +1336,24 @@ type SendCommandOptions = { readonly silent?: boolean };
       ? `战斗命令 ${battleStats.last.name}`
       : "等待战斗命中";
     dom.battleState.textContent = `${noCost} / ${oneHit} / ${invincible} / hooks ${hooksPatched ? "OK" : "--"} / ${last} / ${battle}`;
+  }
+
+  function updateQuickTools(options, state, connected) {
+    const throughRequested = options.playerThrough === true;
+    const throughActive = state.playerThroughActive === true;
+    const quickSaveEnabled = options.quickSaveEnabled !== false;
+    const quickSave = state.quickSave || {};
+    dom.playerThroughBtn.disabled = !connected;
+    dom.quickSaveBtn.disabled = !connected;
+    dom.playerThroughBtn.dataset.requested = throughRequested ? "true" : "false";
+    dom.playerThroughBtn.classList.toggle("active", throughRequested && throughActive);
+    dom.quickSaveBtn.classList.toggle("active", quickSaveEnabled);
+    dom.playerThroughBtn.textContent = throughRequested
+      ? (throughActive ? "穿墙 ON" : "穿墙未就绪")
+      : "穿墙 OFF";
+    dom.quickSaveBtn.textContent = quickSaveEnabled ? "快捷存档 ON" : "快捷存档 OFF";
+    const message = quickSave.lastMessage || "按 ~ 覆盖槽位 1";
+    dom.quickSaveState.textContent = connected ? message : "连接运行时后可用；按 ~ 覆盖槽位 1";
   }
 
   function renderEvents(events) {
@@ -1542,6 +1565,12 @@ type SendCommandOptions = { readonly silent?: boolean };
     $("noCostBtn").addEventListener("click", () => sendOptions({ noSkillCost: !$("noCostBtn").classList.contains("active") }, "noCostBtn"));
     $("oneHitKillBtn").addEventListener("click", () => sendOptions({ oneHitKill: !$("oneHitKillBtn").classList.contains("active") }, "oneHitKillBtn"));
     $("invincibleBtn").addEventListener("click", () => sendOptions({ invincible: !$("invincibleBtn").classList.contains("active") }, "invincibleBtn"));
+    dom.playerThroughBtn.addEventListener("click", () => {
+      sendOptions({ playerThrough: dom.playerThroughBtn.dataset.requested !== "true" }, "playerThroughBtn");
+    });
+    dom.quickSaveBtn.addEventListener("click", () => {
+      sendOptions({ quickSaveEnabled: !dom.quickSaveBtn.classList.contains("active") }, "quickSaveBtn");
+    });
     $("battleKillBtn").addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.battleKillEnemies(), "battleKillBtn"));
     $("battleEscapeBtn").addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.battleEscape(), "battleEscapeBtn"));
     $("partyRecoverBtn").addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.partyRecover(), "partyRecoverBtn"));
