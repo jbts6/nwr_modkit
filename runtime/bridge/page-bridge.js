@@ -1332,6 +1332,7 @@
   let gameSpeedWindowStartedAt = Date.now();
   let gameSpeedWindowFrames = 0;
   let gameSpeedConsecutiveErrors = 0;
+  let gameSpeedInputSuppressed = false;
 
   function nearestGameSpeed(value) {
     return GAME_SPEED_LEVELS.reduce((nearest, level) => (
@@ -1362,6 +1363,31 @@
     return Number(bridge.options.gameSpeed || 1) !== 1;
   }
 
+  // 额外轮次期间屏蔽按键/触摸“边沿”（isTriggered/isRepeated），
+  // 让同一次按键只被第一个逻辑帧消费；isPressed/dir4 保持原样，
+  // 按住方向移动、战斗等待等持续逻辑仍随倍速加速。
+  function installGameSpeedInputGuards() {
+    const sources = [[window.Input, "Input"], [window.TouchInput, "TouchInput"]];
+    let patched = 0;
+    sources.forEach(([object, label]) => {
+      if (!object || object.__codexSpeedEdgeGuard) return;
+      for (const name of ["isTriggered", "isRepeated"]) {
+        const original = object[name];
+        if (typeof original !== "function") continue;
+        object[name] = function () {
+          if (gameSpeedInputSuppressed) return false;
+          return original.apply(this, arguments);
+        };
+        patched += 1;
+      }
+      try {
+        Object.defineProperty(object, "__codexSpeedEdgeGuard", { value: true, configurable: true });
+      } catch (_) {}
+    });
+    if (patched > 0) log("game speed input edge guard installed", { patched });
+    return patched > 0;
+  }
+
   function patchGameSpeedHooks() {
     const sceneManager = window.SceneManager;
     if (!sceneManager || typeof sceneManager.updateMain !== "function") {
@@ -1379,6 +1405,7 @@
       if (speed <= 1) return original.apply(this, args);
       const result = original.apply(this, args);
       let completed = 1;
+      gameSpeedInputSuppressed = true;
       try {
         if (typeof this.changeScene !== "function" || typeof this.updateScene !== "function") {
           throw new Error("SceneManager scene update methods are unavailable");
@@ -1397,6 +1424,8 @@
         if (gameSpeedConsecutiveErrors >= GAME_SPEED_MAX_ERROR_FRAMES) {
           degradeGameSpeed("30 consecutive accelerated frames failed", error);
         }
+      } finally {
+        gameSpeedInputSuppressed = false;
       }
       recordGameSpeedFrames(completed);
       return result;
@@ -1407,6 +1436,7 @@
       return false;
     }
     try { sceneManager.updateMain.__codexGameSpeedPatched = true; } catch (_) {}
+    installGameSpeedInputGuards();
     bridge.gameSpeed.active = bridge.gameSpeed.requested;
     bridge.gameSpeed.degradedReason = null;
     return true;

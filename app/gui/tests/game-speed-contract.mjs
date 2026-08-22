@@ -30,6 +30,7 @@ const setOptions = functionBlock(bridgeSource, "setTrainerOptions");
 const speedHook = functionBlock(bridgeSource, "patchGameSpeedHooks");
 const hotkeys = functionBlock(bridgeSource, "installGameSpeedHotkeys");
 const collectState = functionBlock(bridgeSource, "collectState");
+const inputGuard = functionBlock(bridgeSource, "installGameSpeedInputGuards");
 
 assert(bridgeSource.includes(`const GAME_SPEED_LEVELS = [${SPEEDS.join(", ")}];`), "bridge speed levels must match the design");
 assert(/gameSpeed:\s*1/.test(bridgeSource), "bridge must default gameSpeed to 1");
@@ -40,6 +41,10 @@ assert(speedHook.includes("original.apply(this, args)"), "speed hook must preser
 assert(speedHook.includes("this.changeScene()") && speedHook.includes("this.updateScene()"), "extra rounds must advance only scene logic");
 assert(!speedHook.includes("renderScene") && !speedHook.includes("updateInputData"), "extra rounds must not render or resample input");
 assert(speedHook.includes("try {") && speedHook.includes("catch (error)"), "speed hook must contain a failure boundary");
+assert(speedHook.includes("gameSpeedInputSuppressed"), "extra rounds must suppress input edges");
+assert(!speedHook.includes("Input.update("), "extra rounds must not resample input");
+assert(inputGuard.includes("isTriggered") && inputGuard.includes("isRepeated"), "input guard must suppress trigger and repeat edges");
+assert(inputGuard.includes("window.Input") && inputGuard.includes("window.TouchInput"), "input guard must cover keyboard and touch input");
 assert(bridgeSource.includes("GAME_SPEED_MAX_ERROR_FRAMES = 30"), "degradation threshold must be 30 frames");
 assert(hotkeys.includes('event.key === "]"') && hotkeys.includes('event.key === "["'), "speed hotkeys must use brackets");
 assert(hotkeys.includes('tagName === "INPUT"') && hotkeys.includes("target.isContentEditable"), "speed hotkeys must ignore editable controls");
