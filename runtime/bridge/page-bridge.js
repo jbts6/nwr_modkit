@@ -2,7 +2,7 @@
   if (window.__codexLocalTrainerBridge) return;
 
   const bridge = {
-    version: "0.2.34",
+    version: "0.2.35",
     startedAt: new Date().toISOString(),
     startedAtMs: Date.now(),
     processed: Object.create(null),
@@ -16,6 +16,7 @@
       invincible: false,
       playerThrough: false,
       quickSaveEnabled: true,
+      quickLoadEnabled: true,
       prisonBypass: false,
       gameSpeed: 1
     },
@@ -39,7 +40,18 @@
       lastResult: "idle",
       lastMessage: null
     },
+    quickLoad: {
+      enabled: true,
+      key: "F8",
+      slotId: 1,
+      inFlight: false,
+      lastAttemptAt: null,
+      lastSuccessAt: null,
+      lastResult: "idle",
+      lastMessage: null
+    },
     quickSaveLastTriggerAt: 0,
+    quickLoadLastTriggerAt: 0,
     playerThroughSaveDepth: 0,
     rateDepth: 0,
     suppressRates: 0,
@@ -1327,6 +1339,100 @@
     return true;
   }
 
+  function quickLoadBlockReason() {
+    if (bridge.quickLoad.inFlight) return "快速读档正在进行";
+    if (!fs.existsSync(saveFilePath(1))) return "存档槽位 1 不存在";
+    const sceneManager = resolveSceneManager();
+    const scene = sceneManager && sceneManager._scene;
+    if (!isMapScene(scene)) return "当前不在地图探索界面";
+    if (typeof document.hasFocus === "function" && !document.hasFocus()) return "游戏窗口未获得焦点";
+    if (sceneManager && typeof sceneManager.isSceneChanging === "function" && sceneManager.isSceneChanging()) return "场景正在切换";
+    const player = resolvePlayer();
+    if (!player) return "玩家尚未初始化";
+    if ((typeof player.isTransferring === "function" && player.isTransferring()) || player._transferring) return "地图正在切换";
+    const map = resolveMap();
+    if (!map) return "地图尚未初始化";
+    if (typeof map.isEventRunning === "function" && map.isEventRunning()) return "事件正在执行";
+    const interpreter = map._interpreter;
+    if (interpreter && typeof interpreter.isRunning === "function" && interpreter.isRunning()) return "事件正在执行";
+    const dataManager = resolveDataManager();
+    if (!dataManager || typeof dataManager.loadGame !== "function") return "读档接口不可用";
+    return "";
+  }
+
+  function tryQuickLoad() {
+    const now = Date.now();
+    bridge.quickLoad.lastAttemptAt = now;
+    const blocked = quickLoadBlockReason();
+    if (blocked) {
+      bridge.quickLoad.lastResult = "blocked";
+      bridge.quickLoad.lastMessage = blocked;
+      showQuickSaveMessage(blocked, false);
+      writeState();
+      return { ok: false, result: "blocked", message: blocked };
+    }
+    bridge.quickLoad.inFlight = true;
+    bridge.quickLoad.lastMessage = "快速读档中：槽位 1";
+    writeState();
+    const fail = error => {
+      bridge.lastError = String(error && error.stack || error);
+      bridge.quickLoad.inFlight = false;
+      bridge.quickLoad.lastResult = "error";
+      bridge.quickLoad.lastMessage = "快速读档失败";
+      showQuickSaveMessage(bridge.quickLoad.lastMessage, false);
+      writeState();
+      log("quick load failed", { error: bridge.lastError });
+      return { ok: false, result: "error", message: bridge.quickLoad.lastMessage };
+    };
+    try {
+      const dataManager = resolveDataManager();
+      const result = dataManager.loadGame(bridge.quickLoad.slotId);
+      const complete = value => {
+        if (value === false || value === "false" || (value && value.result === false)) throw new Error("loadGame returned false");
+        try {
+          const system = resolveSaveSystem();
+          if (system && typeof system.onAfterLoad === "function") system.onAfterLoad();
+        } catch (_) {}
+        try {
+          const sceneManager = resolveSceneManager();
+          const sceneMap = window.Scene_Map || tkValue("SceneMap") || tkValue("Scene_Map");
+          if (sceneManager && typeof sceneManager.goto === "function" && sceneMap) sceneManager.goto(sceneMap);
+        } catch (_) {}
+        bridge.quickLoad.inFlight = false;
+        bridge.quickLoad.lastSuccessAt = now;
+        bridge.quickLoad.lastResult = "success";
+        bridge.quickLoad.lastMessage = "快速读档完成：槽位 1";
+        showQuickSaveMessage(bridge.quickLoad.lastMessage, true);
+        writeState();
+        return { ok: true, result: "success", message: bridge.quickLoad.lastMessage };
+      };
+      if (result && typeof result.then === "function") {
+        return Promise.resolve(result).then(complete).catch(fail);
+      }
+      return complete(result);
+    } catch (error) {
+      return fail(error);
+    }
+  }
+
+  function installQuickLoadHotkey() {
+    if (!document || typeof document.addEventListener !== "function" || document.__codexQuickLoadHotkey) return false;
+    document.addEventListener("keydown", function (event) {
+      const target = event && event.target;
+      const tagName = target && String(target.tagName || "").toUpperCase();
+      const editable = !!(target && (target.isContentEditable || tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT"));
+      const isF8 = event && event.key === "F8";
+      if (!bridge.options.quickLoadEnabled || !isF8 || event.repeat || event.ctrlKey || event.altKey || event.metaKey || editable) return;
+      const now = Date.now();
+      if (now - bridge.quickLoadLastTriggerAt < 800) return;
+      bridge.quickLoadLastTriggerAt = now;
+      if (typeof event.preventDefault === "function") event.preventDefault();
+      tryQuickLoad();
+    }, true);
+    Object.defineProperty(document, "__codexQuickLoadHotkey", { value: true, configurable: true });
+    return true;
+  }
+
   const GAME_SPEED_LEVELS = [1, 2, 3, 4, 6, 8, 10];
   const GAME_SPEED_MAX_ERROR_FRAMES = 30;
   let gameSpeedWindowStartedAt = Date.now();
@@ -1482,6 +1588,10 @@
       bridge.options.quickSaveEnabled = toBool(options.quickSaveEnabled);
       bridge.quickSave.enabled = bridge.options.quickSaveEnabled;
     }
+    if (Object.prototype.hasOwnProperty.call(options, "quickLoadEnabled")) {
+      bridge.options.quickLoadEnabled = toBool(options.quickLoadEnabled);
+      bridge.quickLoad.enabled = bridge.options.quickLoadEnabled;
+    }
     if (Object.prototype.hasOwnProperty.call(options, "prisonBypass")) {
       bridge.options.prisonBypass = toBool(options.prisonBypass);
     }
@@ -1614,7 +1724,7 @@
       }, true);
 
       document.addEventListener("keydown", function (event) {
-        if (event.key === "F8") {
+        if (event.key === "F6") {
           root.style.display = root.style.display === "none" ? "" : "none";
           event.preventDefault();
           event.stopPropagation();
@@ -2535,6 +2645,7 @@
       href: location.href,
       title: document.title,
       bridgeVersion: bridge.version,
+      bridgeStartedAt: bridge.startedAtMs,
       hasNode: true,
       cwd: process.cwd(),
       saveDir,
@@ -2563,6 +2674,7 @@
       gameSpeed: { ...bridge.gameSpeed },
       playerThroughActive: bridge.playerThroughActive == null ? null : !!bridge.playerThroughActive,
       quickSave: { ...bridge.quickSave },
+      quickLoad: { ...bridge.quickLoad },
       prisonBypassStats: { ...bridge.prisonBypassStats },
       lastSafeMap: bridge.lastSafeMap,
       prisonBypassHooksPatched: !!bridge.prisonBypassHooksPatched,
@@ -3494,10 +3606,11 @@
   if (bridgeConfig.showWindowOnInject === true) {
     showGameWindow();
   }
-  if (bridgeConfig.overlay !== false) {
+  if (bridgeConfig.overlay === true) {
     installInGameOverlay();
   }
   installQuickSaveHotkey();
+  installQuickLoadHotkey();
   installGameSpeedHotkeys();
   if (bridgeConfig.dataDumpHooks !== false) {
     installEarlyDataHooks();
