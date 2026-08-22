@@ -160,7 +160,7 @@ if ($PrepareOnly) {
   $InitialState = @{
     ts = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     ready = $false
-    bridgeVersion = "0.2.33"
+    bridgeVersion = "0.2.34"
     hasParty = $false
     hasDataManager = $false
     manualBgBridge = $true
