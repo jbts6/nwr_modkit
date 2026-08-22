@@ -126,6 +126,7 @@ type SendCommandOptions = { readonly silent?: boolean };
   let iconExportRequested = false;
   let iconExportCompleted = false;
   let iconExportLastAttemptMs = 0;
+  let sessionRestorePendingOptions: string | null = null;
   let selectedRuntimeRoute = NwrGuiRuntimeRoutes.defaultRouteName();
   let activeToolTab = "core";
   const activeToolSections: NwrGuiToolNavigation.ActiveToolSections = {
@@ -1416,10 +1417,18 @@ type SendCommandOptions = { readonly silent?: boolean };
     const autoRestore = dom.sessionRestoreToggle.checked;
     const stored = readSessionStore();
     if (autoRestore && stored && stored.options && Number(stored.bridgeStartedAt) !== startedAt) {
-      writeSessionStore({ ...stored, bridgeStartedAt: startedAt, autoRestore });
+      sessionRestorePendingOptions = JSON.stringify(stored.options);
       sendOptions(stored.options, "sessionRestore");
+      writeSessionStore({ ...stored, bridgeStartedAt: startedAt, autoRestore });
       showToast("已自动恢复上次修改器配置");
       return;
+    }
+    if (sessionRestorePendingOptions !== null) {
+      if (JSON.stringify(options) === sessionRestorePendingOptions) {
+        sessionRestorePendingOptions = null;
+      } else {
+        return;
+      }
     }
     const next = { options, bridgeStartedAt: startedAt, autoRestore };
     if (!stored || JSON.stringify(stored) !== JSON.stringify(next)) writeSessionStore(next);
