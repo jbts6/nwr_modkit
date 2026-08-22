@@ -39,7 +39,7 @@
 - 守卫条件（与快存一致的部分）：地图探索场景、无事件执行、无地图传送、非战斗、窗口有焦点；差异：读档**不要求** `isSaveEnabled`（允许读），但**要求槽位 1 文件存在**。
 - 执行：`withoutTrainerThroughInSave` 不适用（读档重建游戏对象）；`DataManager.loadGame(1)` 兼容同步/Promise 返回；成功后调用 `$gameSystem.onAfterLoad()`（存在时）并 `sceneManager.goto(Scene_Map)`；失败写入 `lastError` 与 `quickLoad.lastResult = "error"`。
 - 状态新增 `quickLoad: { enabled, key: "F8", slotId: 1, inFlight, lastAttemptAt, lastSuccessAt, lastResult: idle|success|blocked|error, lastMessage }`。
-- **F8 键迁移**：现有游戏内浮窗（`installInGameOverlay`）的显隐开关从 F8 迁移到 F6（引擎占用 F3/F4/F5，F6 空闲），避免冲突；浮窗迁移随本设计一并实现并在文档标注。
+- **F8 键与浮窗**：游戏内浮窗（`installInGameOverlay`）原占用 F8。本设计将浮窗改为**默认不安装**（`bridgeConfig.overlay === true` 时才安装），显隐键迁移到 F6（引擎占用 F3/F4/F5，F6 空闲）；F8 专用快速读档。
 
 ### GUI 实现
 
@@ -70,7 +70,7 @@ bridge 的 `collectState` 新增 `bridgeStartedAt`（取 `bridge.startedAtMs`）
 ## 测试与文档
 
 - 新合同脚本 `tests/quick-load-session-contract.mjs`（`package.json` 登记 `test:quick-session`），静态断言：
-  - bridge：F8 热键、守卫（含槽位存在）、`quickLoad` 状态、浮窗 F6 迁移、`bridgeStartedAt` 回写。
+  - bridge：F8 热键、守卫（含槽位存在）、`quickLoad` 状态、浮窗默认关闭（`bridgeConfig.overlay === true`）与 F6 迁移、`bridgeStartedAt` 回写。
   - GUI：按钮/状态行/勾选框存在、`sessionRestore` 重发逻辑、localStorage 键名、版本 `0.2.35` 四处同步。
 - 回归：全部现有合同 + `npm run build`；`test:guardrails` 的仓库外 A1 证据缺失为既有限制，仅记录。
 - 文档：`README.md`、`docs/工具使用说明.md` 补用法段；`docs/技术实现文档.md` 登记 `quickLoad` 状态字段、F8/F6 键位、会话恢复机制与 `0.2.35` 要求。
