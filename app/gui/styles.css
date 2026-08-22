@@ -1381,3 +1381,11 @@ body.page-scroll-mode .party-panel ul {
     animation-iteration-count: 1 !important;
   }
 }
+
+.session-restore-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  user-select: none;
+}

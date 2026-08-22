@@ -52,4 +52,19 @@ assert(overlay.includes('event.key === "F6"') && !overlay.includes('event.key ==
 assert(/bridgeConfig\.overlay === true/.test(bridgeSource), "in-game overlay must be opt-in");
 assert(packageJson.scripts["test:quick-session"] === "node tests/quick-load-session-contract.mjs", "package must expose test:quick-session");
 
-console.log("quick load runtime contract OK");
+const appSource = fs.readFileSync(path.join(guiDir, "app.ts"), "utf8");
+const indexHtml = fs.readFileSync(path.join(guiDir, "index.html"), "utf8");
+const guardrails = fs.readFileSync(path.join(guiDir, "src", "command-guardrails.ts"), "utf8");
+const protocol = JSON.parse(fs.readFileSync(path.join(guiDir, "protocol-metadata.json"), "utf8"));
+
+assert(indexHtml.includes('id="quickLoadBtn"') && indexHtml.includes('id="quickLoadState"'), "quick load button and state line must exist");
+assert(indexHtml.includes('id="sessionRestoreToggle"'), "session restore toggle must exist");
+assert(appSource.includes("sendOptions({ quickLoadEnabled:"), "quick load toggle must reuse trainer.options.set");
+assert(appSource.includes('"nwr.trainer.session"'), "session snapshot must persist to localStorage");
+assert(appSource.includes('"sessionRestore"'), "GUI must auto-resend options on new bridge sessions");
+assert(appSource.includes("bridgeStartedAt"), "GUI must key session detection on bridgeStartedAt");
+assert(appSource.includes("state.quickLoad"), "GUI must render quick load state");
+assert(guardrails.includes('action("quickLoadBtn"'), "quick load button must be registered in guardrails");
+assert(protocol.expectedBridgeVersion === "0.2.35", "GUI protocol metadata must require bridge 0.2.35");
+
+console.log("quick load contract OK");

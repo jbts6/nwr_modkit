@@ -306,6 +306,7 @@ var NwrGuiCommandGuardrails;
         action("invincibleBtn", "Toggle invincible", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
         action("playerThroughBtn", "Toggle player through", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
         action("quickSaveBtn", "Toggle quick save hotkey", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
+        action("quickLoadBtn", "Toggle quick load hotkey", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
         action("battleKillBtn", "Kill battle enemies", "battle.killEnemies", "disable-guard", ["trainer.hooks.info", "runtime.inspect"], BATTLE_EVENTS),
         action("battleEscapeBtn", "Battle escape", "battle.escape", "disable-guard", ["trainer.hooks.info", "runtime.inspect"], BATTLE_EVENTS),
         action("partyRecoverBtn", "Recover party", "party.recover", "keep", ["ping"], PING_EVENTS),
@@ -1299,7 +1300,8 @@ var NwrGuiCatalog;
     const iconDir = path.join(process.cwd(), "icons");
     const exportedIconSetPath = path.join(iconDir, "IconSet.png");
     const fallbackIconSetPath = path.join(rootDir, "www", "img", "system", "IconSet.png");
-    const EXPECTED_BRIDGE_VERSION = "0.2.34";
+    const EXPECTED_BRIDGE_VERSION = "0.2.35";
+    const SESSION_STORE_KEY = "nwr.trainer.session";
     const GAME_SPEED_LEVELS = [1, 2, 3, 4, 6, 8, 10];
     const ICON_EXPORT_RETRY_MS = 5000;
     const $ = (id) => {
@@ -1333,6 +1335,9 @@ var NwrGuiCatalog;
         playerThroughBtn: $("playerThroughBtn"),
         quickSaveBtn: $("quickSaveBtn"),
         quickSaveState: $("quickSaveState"),
+        quickLoadBtn: $("quickLoadBtn"),
+        quickLoadState: $("quickLoadState"),
+        sessionRestoreToggle: $("sessionRestoreToggle"),
         gameSpeedState: $("gameSpeedState"),
         variableList: $("variableList"),
         variableListCount: $("variableListCount"),
@@ -2529,6 +2534,7 @@ var NwrGuiCatalog;
             updateOptionInputs(options);
         updateBattleButtons(options, view.fresh && state.hooksPatched, view.fresh ? state.rateStats : null, view.fresh ? state.battleStats : null);
         updateQuickTools(options, view.fresh ? state : {}, view.fresh && view.versionOk);
+        updateSessionRestore(view.fresh && view.versionOk ? state : null, options);
     }
     function updateOptionInputs(options) {
         [["expRate", options.expRate], ["goldRate", options.goldRate], ["dropRate", options.dropRate]].forEach(([id, value]) => {
@@ -2568,6 +2574,13 @@ var NwrGuiCatalog;
         dom.quickSaveBtn.textContent = quickSaveEnabled ? "快捷存档 ON" : "快捷存档 OFF";
         const message = quickSave.lastMessage || "按 ~ 覆盖槽位 1";
         dom.quickSaveState.textContent = connected ? message : "连接运行时后可用；按 ~ 覆盖槽位 1";
+        const quickLoadEnabled = options.quickLoadEnabled !== false;
+        const quickLoad = state.quickLoad || {};
+        dom.quickLoadBtn.disabled = !connected;
+        dom.quickLoadBtn.classList.toggle("active", quickLoadEnabled);
+        dom.quickLoadBtn.textContent = quickLoadEnabled ? "快捷读档 ON" : "快捷读档 OFF";
+        const loadMessage = quickLoad.lastMessage || "游戏内按 F8 读回槽位 1";
+        dom.quickLoadState.textContent = connected ? loadMessage : "连接运行时后可用；游戏内按 F8 读回槽位 1";
         updateGameSpeed(options, state, connected);
     }
     function updateGameSpeed(options, state, connected) {
@@ -2590,6 +2603,39 @@ var NwrGuiCatalog;
             return;
         }
         dom.gameSpeedState.textContent = `请求 ${requested}x / 生效 ${active}x / 逻辑 ${Number(gameSpeed.logicFps || 0)} FPS`;
+    }
+    function readSessionStore() {
+        try {
+            const value = JSON.parse(localStorage.getItem(SESSION_STORE_KEY) || "null");
+            return value && typeof value === "object" ? value : null;
+        }
+        catch {
+            return null;
+        }
+    }
+    function writeSessionStore(value) {
+        try {
+            localStorage.setItem(SESSION_STORE_KEY, JSON.stringify(value));
+        }
+        catch {
+            // localStorage 不可用时静默降级为仅会话内记忆
+        }
+    }
+    function updateSessionRestore(state, options) {
+        if (!state || !state.bridgeStartedAt || !options)
+            return;
+        const startedAt = Number(state.bridgeStartedAt);
+        const autoRestore = dom.sessionRestoreToggle.checked;
+        const stored = readSessionStore();
+        if (autoRestore && stored && stored.options && Number(stored.bridgeStartedAt) !== startedAt) {
+            writeSessionStore({ ...stored, bridgeStartedAt: startedAt, autoRestore });
+            sendOptions(stored.options, "sessionRestore");
+            showToast("已自动恢复上次修改器配置");
+            return;
+        }
+        const next = { options, bridgeStartedAt: startedAt, autoRestore };
+        if (!stored || JSON.stringify(stored) !== JSON.stringify(next))
+            writeSessionStore(next);
     }
     function renderEvents(events) {
         dom.eventList.innerHTML = NwrGuiRuntimeEvents.eventListHtml(events);
@@ -2780,6 +2826,17 @@ var NwrGuiCatalog;
         dom.quickSaveBtn.addEventListener("click", () => {
             sendOptions({ quickSaveEnabled: !dom.quickSaveBtn.classList.contains("active") }, "quickSaveBtn");
         });
+        dom.quickLoadBtn.addEventListener("click", () => {
+            sendOptions({ quickLoadEnabled: !dom.quickLoadBtn.classList.contains("active") }, "quickLoadBtn");
+        });
+        dom.sessionRestoreToggle.addEventListener("change", () => {
+            const stored = readSessionStore();
+            if (stored && stored.autoRestore !== dom.sessionRestoreToggle.checked) {
+                writeSessionStore({ ...stored, autoRestore: dom.sessionRestoreToggle.checked });
+            }
+        });
+        const storedSession = readSessionStore();
+        dom.sessionRestoreToggle.checked = storedSession ? storedSession.autoRestore !== false : true;
         document.querySelectorAll("[data-game-speed]").forEach((button) => {
             button.addEventListener("click", () => {
                 const speed = Number(button.dataset.gameSpeed || 1);

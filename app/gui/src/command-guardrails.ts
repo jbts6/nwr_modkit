@@ -44,6 +44,7 @@ namespace NwrGuiCommandGuardrails {
     action("invincibleBtn", "Toggle invincible", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
     action("playerThroughBtn", "Toggle player through", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
     action("quickSaveBtn", "Toggle quick save hotkey", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
+    action("quickLoadBtn", "Toggle quick load hotkey", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
     action("battleKillBtn", "Kill battle enemies", "battle.killEnemies", "disable-guard", ["trainer.hooks.info", "runtime.inspect"], BATTLE_EVENTS),
     action("battleEscapeBtn", "Battle escape", "battle.escape", "disable-guard", ["trainer.hooks.info", "runtime.inspect"], BATTLE_EVENTS),
     action("partyRecoverBtn", "Recover party", "party.recover", "keep", ["ping"], PING_EVENTS),

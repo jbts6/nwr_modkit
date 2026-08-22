@@ -96,8 +96,11 @@
             <div class="battle-switches quick-tool-buttons">
               <button id="playerThroughBtn" class="toggle-btn" disabled>穿墙 OFF</button>
               <button id="quickSaveBtn" class="toggle-btn" disabled>快捷存档 ON</button>
+              <button id="quickLoadBtn" class="toggle-btn" disabled>快捷读档 ON</button>
             </div>
             <div id="quickSaveState" class="hint">连接运行时后可用；按 ~ 覆盖槽位 1。</div>
+            <div id="quickLoadState" class="hint">连接运行时后可用；游戏内按 F8 读回槽位 1。</div>
+            <label class="hint session-restore-row"><input id="sessionRestoreToggle" type="checkbox" checked /> 重启后自动恢复修改器配置</label>
             <div id="gameSpeedRow" class="segmented game-speed-row" role="group" aria-label="游戏倍速">
               <button data-game-speed="1" aria-pressed="true" disabled>1x</button>
               <button data-game-speed="2" aria-pressed="false" disabled>2x</button>

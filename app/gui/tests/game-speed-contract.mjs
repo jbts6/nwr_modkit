@@ -66,6 +66,6 @@ assert(appSource.includes('sendOptions({ gameSpeed: speed }, "selector:data-game
 assert(appSource.includes("gameSpeed.degradedReason") && appSource.includes("gameSpeed.logicFps"), "GUI must render degraded state and measured logic FPS");
 assert(guardrails.includes('action("selector:data-game-speed"') && guardrails.includes('"optimize"'), "speed selector must be registered as optimize");
 assert(styles.includes(".game-speed-row"), "speed selector must have stable responsive layout");
-assert(protocol.expectedBridgeVersion === "0.2.34", "GUI protocol metadata must require bridge 0.2.34");
+assert(protocol.expectedBridgeVersion === "0.2.35", "GUI protocol metadata must require bridge 0.2.35");
 
 console.log("game speed contract OK");
