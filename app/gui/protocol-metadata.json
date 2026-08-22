@@ -1,5 +1,5 @@
 {
-  "expectedBridgeVersion": "0.2.33",
+  "expectedBridgeVersion": "0.2.34",
   "supportedRoutes": [
     "manual-bg-bridge"
   ],

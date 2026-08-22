@@ -54,7 +54,8 @@ type SendCommandOptions = { readonly silent?: boolean };
   const iconDir = path.join(process.cwd(), "icons");
   const exportedIconSetPath = path.join(iconDir, "IconSet.png");
   const fallbackIconSetPath = path.join(rootDir, "www", "img", "system", "IconSet.png");
-  const EXPECTED_BRIDGE_VERSION = "0.2.33";
+  const EXPECTED_BRIDGE_VERSION = "0.2.34";
+  const GAME_SPEED_LEVELS = [1, 2, 3, 4, 6, 8, 10] as const;
   const ICON_EXPORT_RETRY_MS = 5000;
 
   const $ = (id: string): DomElement => {
@@ -87,6 +88,7 @@ type SendCommandOptions = { readonly silent?: boolean };
     playerThroughBtn: $("playerThroughBtn"),
     quickSaveBtn: $("quickSaveBtn"),
     quickSaveState: $("quickSaveState"),
+    gameSpeedState: $("gameSpeedState"),
     variableList: $("variableList"),
     variableListCount: $("variableListCount"),
     switchList: $("switchList"),
@@ -1354,6 +1356,29 @@ type SendCommandOptions = { readonly silent?: boolean };
     dom.quickSaveBtn.textContent = quickSaveEnabled ? "快捷存档 ON" : "快捷存档 OFF";
     const message = quickSave.lastMessage || "按 ~ 覆盖槽位 1";
     dom.quickSaveState.textContent = connected ? message : "连接运行时后可用；按 ~ 覆盖槽位 1";
+    updateGameSpeed(options, state, connected);
+  }
+
+  function updateGameSpeed(options, state, connected) {
+    const gameSpeed = state.gameSpeed || {};
+    const requested = Number(options.gameSpeed || gameSpeed.requested || 1);
+    const active = Number(gameSpeed.active || 1);
+    document.querySelectorAll<HTMLButtonElement>("[data-game-speed]").forEach((button) => {
+      const speed = Number(button.dataset.gameSpeed || 1);
+      const selected = speed === requested;
+      button.disabled = !connected;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    if (!connected) {
+      dom.gameSpeedState.textContent = "连接运行时后可用；按 [ / ] 调整档位。";
+      return;
+    }
+    if (gameSpeed.degradedReason) {
+      dom.gameSpeedState.textContent = `已降级到 ${active}x：${gameSpeed.degradedReason}`;
+      return;
+    }
+    dom.gameSpeedState.textContent = `请求 ${requested}x / 生效 ${active}x / 逻辑 ${Number(gameSpeed.logicFps || 0)} FPS`;
   }
 
   function renderEvents(events) {
@@ -1570,6 +1595,12 @@ type SendCommandOptions = { readonly silent?: boolean };
     });
     dom.quickSaveBtn.addEventListener("click", () => {
       sendOptions({ quickSaveEnabled: !dom.quickSaveBtn.classList.contains("active") }, "quickSaveBtn");
+    });
+    document.querySelectorAll<HTMLButtonElement>("[data-game-speed]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const speed = Number(button.dataset.gameSpeed || 1);
+        sendOptions({ gameSpeed: speed }, "selector:data-game-speed");
+      });
     });
     $("battleKillBtn").addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.battleKillEnemies(), "battleKillBtn"));
     $("battleEscapeBtn").addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.battleEscape(), "battleEscapeBtn"));

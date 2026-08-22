@@ -1073,6 +1073,24 @@ label span {
   color: #ffffff;
 }
 
+.game-speed-row {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.game-speed-row button {
+  min-width: 0;
+  min-height: 44px;
+  padding-inline: 4px;
+}
+
+@media (max-width: 720px) {
+  .game-speed-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 .event-panel {
   min-height: 0;
   overflow: visible;

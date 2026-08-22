@@ -300,6 +300,7 @@ var NwrGuiCommandGuardrails;
         action("skillForgetBtn", "Forget actor skill", "actor.skill.forget", "keep", ["data.dump", "ping"], DATA_EVENTS),
         action("ratesApplyBtn", "Apply trainer rates", "trainer.options.set", "optimize", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
         action("selector:data-rate", "Trainer rate presets", "trainer.options.set", "optimize", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
+        action("selector:data-game-speed", "Game speed levels", "trainer.options.set", "optimize", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
         action("noCostBtn", "Toggle no skill cost", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
         action("oneHitKillBtn", "Toggle one hit kill", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
         action("invincibleBtn", "Toggle invincible", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
@@ -1298,7 +1299,8 @@ var NwrGuiCatalog;
     const iconDir = path.join(process.cwd(), "icons");
     const exportedIconSetPath = path.join(iconDir, "IconSet.png");
     const fallbackIconSetPath = path.join(rootDir, "www", "img", "system", "IconSet.png");
-    const EXPECTED_BRIDGE_VERSION = "0.2.33";
+    const EXPECTED_BRIDGE_VERSION = "0.2.34";
+    const GAME_SPEED_LEVELS = [1, 2, 3, 4, 6, 8, 10];
     const ICON_EXPORT_RETRY_MS = 5000;
     const $ = (id) => {
         const element = document.getElementById(id);
@@ -1331,6 +1333,7 @@ var NwrGuiCatalog;
         playerThroughBtn: $("playerThroughBtn"),
         quickSaveBtn: $("quickSaveBtn"),
         quickSaveState: $("quickSaveState"),
+        gameSpeedState: $("gameSpeedState"),
         variableList: $("variableList"),
         variableListCount: $("variableListCount"),
         switchList: $("switchList"),
@@ -2565,6 +2568,28 @@ var NwrGuiCatalog;
         dom.quickSaveBtn.textContent = quickSaveEnabled ? "快捷存档 ON" : "快捷存档 OFF";
         const message = quickSave.lastMessage || "按 ~ 覆盖槽位 1";
         dom.quickSaveState.textContent = connected ? message : "连接运行时后可用；按 ~ 覆盖槽位 1";
+        updateGameSpeed(options, state, connected);
+    }
+    function updateGameSpeed(options, state, connected) {
+        const gameSpeed = state.gameSpeed || {};
+        const requested = Number(options.gameSpeed || gameSpeed.requested || 1);
+        const active = Number(gameSpeed.active || 1);
+        document.querySelectorAll("[data-game-speed]").forEach((button) => {
+            const speed = Number(button.dataset.gameSpeed || 1);
+            const selected = speed === requested;
+            button.disabled = !connected;
+            button.classList.toggle("active", selected);
+            button.setAttribute("aria-pressed", String(selected));
+        });
+        if (!connected) {
+            dom.gameSpeedState.textContent = "连接运行时后可用；按 [ / ] 调整档位。";
+            return;
+        }
+        if (gameSpeed.degradedReason) {
+            dom.gameSpeedState.textContent = `已降级到 ${active}x：${gameSpeed.degradedReason}`;
+            return;
+        }
+        dom.gameSpeedState.textContent = `请求 ${requested}x / 生效 ${active}x / 逻辑 ${Number(gameSpeed.logicFps || 0)} FPS`;
     }
     function renderEvents(events) {
         dom.eventList.innerHTML = NwrGuiRuntimeEvents.eventListHtml(events);
@@ -2754,6 +2779,12 @@ var NwrGuiCatalog;
         });
         dom.quickSaveBtn.addEventListener("click", () => {
             sendOptions({ quickSaveEnabled: !dom.quickSaveBtn.classList.contains("active") }, "quickSaveBtn");
+        });
+        document.querySelectorAll("[data-game-speed]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const speed = Number(button.dataset.gameSpeed || 1);
+                sendOptions({ gameSpeed: speed }, "selector:data-game-speed");
+            });
         });
         $("battleKillBtn").addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.battleKillEnemies(), "battleKillBtn"));
         $("battleEscapeBtn").addEventListener("click", () => sendCommand(NwrGuiBridgeCommands.battleEscape(), "battleEscapeBtn"));

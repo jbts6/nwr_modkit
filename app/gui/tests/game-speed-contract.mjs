@@ -47,4 +47,20 @@ assert(collectState.includes("gameSpeed: { ...bridge.gameSpeed }"), "collectStat
 assert(bridgeSource.includes("installGameSpeedHotkeys();"), "speed hotkeys must be installed at startup");
 assert(packageJson.scripts["test:game-speed"] === "node tests/game-speed-contract.mjs", "package must expose test:game-speed");
 
-console.log("game speed runtime contract OK");
+const appSource = fs.readFileSync(path.join(guiDir, "app.ts"), "utf8");
+const indexHtml = fs.readFileSync(path.join(guiDir, "index.html"), "utf8");
+const styles = fs.readFileSync(path.join(guiDir, "styles.css"), "utf8");
+const guardrails = fs.readFileSync(path.join(guiDir, "src", "command-guardrails.ts"), "utf8");
+const protocol = JSON.parse(fs.readFileSync(path.join(guiDir, "protocol-metadata.json"), "utf8"));
+const htmlSpeeds = Array.from(indexHtml.matchAll(/data-game-speed="(\d+)"/g), (match) => Number(match[1]));
+
+assert(appSource.includes(`const GAME_SPEED_LEVELS = [${SPEEDS.join(", ")}] as const;`), "GUI speed levels must match the bridge");
+assert(JSON.stringify(htmlSpeeds) === JSON.stringify(SPEEDS), "HTML speed buttons must match the designed levels");
+assert(indexHtml.includes('id="gameSpeedRow"') && indexHtml.includes('id="gameSpeedState"'), "speed row and state text must exist");
+assert(appSource.includes('sendOptions({ gameSpeed: speed }, "selector:data-game-speed")'), "speed buttons must reuse trainer.options.set");
+assert(appSource.includes("gameSpeed.degradedReason") && appSource.includes("gameSpeed.logicFps"), "GUI must render degraded state and measured logic FPS");
+assert(guardrails.includes('action("selector:data-game-speed"') && guardrails.includes('"optimize"'), "speed selector must be registered as optimize");
+assert(styles.includes(".game-speed-row"), "speed selector must have stable responsive layout");
+assert(protocol.expectedBridgeVersion === "0.2.34", "GUI protocol metadata must require bridge 0.2.34");
+
+console.log("game speed contract OK");

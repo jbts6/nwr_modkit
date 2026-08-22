@@ -38,6 +38,7 @@ namespace NwrGuiCommandGuardrails {
     action("skillForgetBtn", "Forget actor skill", "actor.skill.forget", "keep", ["data.dump", "ping"], DATA_EVENTS),
     action("ratesApplyBtn", "Apply trainer rates", "trainer.options.set", "optimize", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
     action("selector:data-rate", "Trainer rate presets", "trainer.options.set", "optimize", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
+    action("selector:data-game-speed", "Game speed levels", "trainer.options.set", "optimize", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
     action("noCostBtn", "Toggle no skill cost", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
     action("oneHitKillBtn", "Toggle one hit kill", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
     action("invincibleBtn", "Toggle invincible", "trainer.options.set", "disable-guard", ["trainer.hooks.info", "ping"], HOOK_EVENTS),
