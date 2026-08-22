@@ -2,7 +2,7 @@
   if (window.__codexLocalTrainerBridge) return;
 
   const bridge = {
-    version: "0.2.33",
+    version: "0.2.34",
     startedAt: new Date().toISOString(),
     startedAtMs: Date.now(),
     processed: Object.create(null),
@@ -16,7 +16,17 @@
       invincible: false,
       playerThrough: false,
       quickSaveEnabled: true,
-      prisonBypass: false
+      prisonBypass: false,
+      gameSpeed: 1
+    },
+    gameSpeed: {
+      requested: 1,
+      active: 1,
+      hooked: false,
+      logicFps: 0,
+      extraFrames: 0,
+      degradedReason: null,
+      lastError: null
     },
     playerThroughActive: null,
     quickSave: {
@@ -1317,6 +1327,112 @@
     return true;
   }
 
+  const GAME_SPEED_LEVELS = [1, 2, 3, 4, 6, 8, 10];
+  const GAME_SPEED_MAX_ERROR_FRAMES = 30;
+  let gameSpeedWindowStartedAt = Date.now();
+  let gameSpeedWindowFrames = 0;
+  let gameSpeedConsecutiveErrors = 0;
+
+  function nearestGameSpeed(value) {
+    return GAME_SPEED_LEVELS.reduce((nearest, level) => (
+      Math.abs(level - value) < Math.abs(nearest - value) ? level : nearest
+    ), GAME_SPEED_LEVELS[0]);
+  }
+
+  function recordGameSpeedFrames(count) {
+    const now = Date.now();
+    gameSpeedWindowFrames += count;
+    const elapsed = now - gameSpeedWindowStartedAt;
+    if (elapsed < 1000) return;
+    bridge.gameSpeed.logicFps = Math.round(gameSpeedWindowFrames * 1000 / elapsed);
+    gameSpeedWindowStartedAt = now;
+    gameSpeedWindowFrames = 0;
+  }
+
+  function degradeGameSpeed(reason, error) {
+    bridge.gameSpeed.active = 1;
+    bridge.gameSpeed.degradedReason = reason;
+    if (error) {
+      bridge.gameSpeed.lastError = String(error && error.stack || error);
+      bridge.lastError = bridge.gameSpeed.lastError;
+    }
+  }
+
+  function speedHooksWanted() {
+    return Number(bridge.options.gameSpeed || 1) !== 1;
+  }
+
+  function patchGameSpeedHooks() {
+    const sceneManager = window.SceneManager;
+    if (!sceneManager || typeof sceneManager.updateMain !== "function") {
+      bridge.gameSpeed.hooked = false;
+      degradeGameSpeed("SceneManager.updateMain is unavailable");
+      return false;
+    }
+    // bridgeTick 可能已包装 updateMain：先摘除其已打补丁标记，让 patchMethod 真正叠加本层包装
+    const existing = sceneManager.updateMain;
+    if (existing && existing.__codexTrainerPatched && !existing.__codexGameSpeedPatched) {
+      try { delete existing.__codexTrainerPatched; } catch (_) {}
+    }
+    const patched = patchMethod(sceneManager, "updateMain", "SceneManager.updateMain", function (original, args) {
+      const speed = Number(bridge.gameSpeed.active || 1);
+      if (speed <= 1) return original.apply(this, args);
+      const result = original.apply(this, args);
+      let completed = 1;
+      try {
+        if (typeof this.changeScene !== "function" || typeof this.updateScene !== "function") {
+          throw new Error("SceneManager scene update methods are unavailable");
+        }
+        for (let index = 1; index < speed; index += 1) {
+          this.changeScene();
+          this.updateScene();
+          completed += 1;
+          bridge.gameSpeed.extraFrames += 1;
+        }
+        gameSpeedConsecutiveErrors = 0;
+      } catch (error) {
+        gameSpeedConsecutiveErrors += 1;
+        bridge.gameSpeed.lastError = String(error && error.stack || error);
+        bridge.lastError = bridge.gameSpeed.lastError;
+        if (gameSpeedConsecutiveErrors >= GAME_SPEED_MAX_ERROR_FRAMES) {
+          degradeGameSpeed("30 consecutive accelerated frames failed", error);
+        }
+      }
+      recordGameSpeedFrames(completed);
+      return result;
+    });
+    bridge.gameSpeed.hooked = patched;
+    if (!patched) {
+      degradeGameSpeed("SceneManager.updateMain could not be wrapped");
+      return false;
+    }
+    try { sceneManager.updateMain.__codexGameSpeedPatched = true; } catch (_) {}
+    bridge.gameSpeed.active = bridge.gameSpeed.requested;
+    bridge.gameSpeed.degradedReason = null;
+    return true;
+  }
+
+  function installGameSpeedHotkeys() {
+    if (!document || typeof document.addEventListener !== "function" || document.__codexGameSpeedHotkeys) return false;
+    document.addEventListener("keydown", function (event) {
+      const target = event && event.target;
+      const tagName = target && String(target.tagName || "").toUpperCase();
+      const editable = !!(target && (target.isContentEditable || tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT"));
+      const direction = event && (event.key === "]" || event.code === "BracketRight")
+        ? 1
+        : (event && (event.key === "[" || event.code === "BracketLeft") ? -1 : 0);
+      if (!direction || event.repeat || event.ctrlKey || event.altKey || event.metaKey || editable) return;
+      const current = GAME_SPEED_LEVELS.indexOf(bridge.options.gameSpeed);
+      const next = Math.min(GAME_SPEED_LEVELS.length - 1, Math.max(0, current + direction));
+      if (next === current) return;
+      if (typeof event.preventDefault === "function") event.preventDefault();
+      setTrainerOptions({ gameSpeed: GAME_SPEED_LEVELS[next] });
+      writeState();
+    }, true);
+    Object.defineProperty(document, "__codexGameSpeedHotkeys", { value: true, configurable: true });
+    return true;
+  }
+
   function setTrainerOptions(options) {
     if (!options || typeof options !== "object") return { ...bridge.options };
     const previousNoCost = bridge.options.noSkillCost;
@@ -1338,6 +1454,17 @@
     }
     if (Object.prototype.hasOwnProperty.call(options, "prisonBypass")) {
       bridge.options.prisonBypass = toBool(options.prisonBypass);
+    }
+    if (Object.prototype.hasOwnProperty.call(options, "gameSpeed")) {
+      const clamped = clampNumber(options.gameSpeed, 1, 10, bridge.options.gameSpeed);
+      const next = nearestGameSpeed(clamped);
+      bridge.options.gameSpeed = next;
+      bridge.gameSpeed.requested = next;
+      gameSpeedConsecutiveErrors = 0;
+      if (next === 1) {
+        bridge.gameSpeed.active = 1;
+        bridge.gameSpeed.degradedReason = null;
+      }
     }
     if (previousNoCost !== bridge.options.noSkillCost) {
       resetNoCostBaselines();
@@ -1942,6 +2069,13 @@
       }
     });
 
+    // 游戏倍速：包装 SceneManager.updateMain，额外轮次只推进场景逻辑
+    if (speedHooksWanted()) {
+      if (patchGameSpeedHooks()) {
+        bridge.hookTargets.push("SceneManager.updateMain");
+      }
+    }
+
     bridge.hooksPatched = count > 0;
     bridge.hookTargets = Array.from(new Set(hooked));
     return { patched: bridge.hooksPatched, count };
@@ -1949,7 +2083,7 @@
 
   function trainerHooksWanted() {
     if (bridgeConfig.trainerHooks === false) return false;
-    return rewardHooksWanted() || battleHooksWanted() || prisonHooksWanted();
+    return rewardHooksWanted() || battleHooksWanted() || prisonHooksWanted() || speedHooksWanted();
   }
 
   function ensureTrainerHooks() {
@@ -2396,6 +2530,7 @@
       partyMembers: getPartyMembers(party).map(actorInfo).filter(Boolean),
       prisonGuardReport: collectPrisonGuardReport(),
       trainerOptions: { ...bridge.options },
+      gameSpeed: { ...bridge.gameSpeed },
       playerThroughActive: bridge.playerThroughActive == null ? null : !!bridge.playerThroughActive,
       quickSave: { ...bridge.quickSave },
       prisonBypassStats: { ...bridge.prisonBypassStats },
@@ -3333,6 +3468,7 @@
     installInGameOverlay();
   }
   installQuickSaveHotkey();
+  installGameSpeedHotkeys();
   if (bridgeConfig.dataDumpHooks !== false) {
     installEarlyDataHooks();
   }

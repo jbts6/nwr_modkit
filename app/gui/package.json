@@ -10,6 +10,7 @@
     "test:catalog": "node tests/catalog-contract.mjs",
     "test:commands": "node tests/bridge-command-builders.mjs",
     "test:diagnostics": "node tests/diagnostics-contract.mjs",
+    "test:game-speed": "node tests/game-speed-contract.mjs",
     "test:guardrails": "node tests/guardrails-contract.mjs",
     "test:inventory": "node tests/gui-feature-inventory.mjs",
     "test:topology": "node tests/build-topology.mjs",
