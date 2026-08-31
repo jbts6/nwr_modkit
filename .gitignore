@@ -87,5 +87,9 @@ npm-debug.log*
 # Local Codex workspace cache
 .codex/
 
+# Local agent metadata
+.helloagents/
+.superpowers/
+
 # Per-user local configuration
 config.local.json
